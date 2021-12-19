@@ -1,0 +1,31 @@
+* text eol=lf
+* text eol=lf
+# checkout and commit only LF
+# ...Unless the name matches the following
+# overriding patterns
+
+# Definitively text files 
+*.txt text
+*.c text
+*.cpp text
+*.h text
+*.hpp text
+*.java text
+*.gradle text
+*.xml text
+*.svg text
+*.properties text
+
+# Ensure those won't be messed up with
+*.jpg binary
+*.data binary
+*.png binary
+*.gif binary
+*.ttf binary
+*.pdf binary
+*.webp binary
+*.tiff binary
+*.psd binary
+*.raw binary
+*.bmp binary
+*.jpeg binary
