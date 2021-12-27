@@ -2,6 +2,7 @@
 #define OPTIMIZATION_STOPPINGCONDITION
 
 #include <algorithm>
+#include <iostream>
 
 #include "definitions.hpp"
 
@@ -13,10 +14,7 @@ struct DerivationRefHolder {};
 
 template <unsigned p, typename T, class Q>
 struct DerivationRefHolder<p, T, Q, std::enable_if_t<std::is_same<Q, TrueType>::value>> {
-  DerivationRefHolder() : current_objective_derivative(dummy){};
-
-  Objective<p, T> dummy;
-  Objective<p, T> &current_objective_derivative;
+  const Objective<p, T> *current_objective_derivative;
 };
 
 template <unsigned p, typename T, class Q>
@@ -47,7 +45,7 @@ class StoppingCondition
 
   template <class Q = EnableType<needs_derivative>>
   typename std::enable_if<std::is_same<Q, TrueType>::value, void>::type init(
-      const O &objective, const dO &objective_derivative) {
+      const O *objective, const dO *objective_derivative) {
     current_objective = objective;
     this->current_objective_derivative = objective_derivative;
     initInternal();
@@ -56,7 +54,7 @@ class StoppingCondition
 
   // template <class Q = EnableType<needs_derivative>>
   // typename std::enable_if<std::is_same<Q, FalseType>::value, void>::type
-  void init(const O &objective) {
+  void init(const O *objective) {
     static_assert(!needs_derivative,
                   "The choosen Stopping condition needs a derivative to work.");
     current_objective = objective;
@@ -75,8 +73,7 @@ class StoppingCondition
                     const std::function<void()> &apply_internal_reset,
                     const std::function<void()> &apply_internal_init,
                     const std::function<void()> &apply_internal_update)
-      : current_objective(dummy),
-        checkCondition(applys_callback),
+      : checkCondition(applys_callback),
         resetInternal(apply_internal_reset),
         updateStep(apply_internal_update),
         initInternal(apply_internal_init) {}
@@ -84,13 +81,11 @@ class StoppingCondition
   StoppingCondition(const std::function<bool()> &applys_callback,
                     const std::function<void()> &apply_internal_reset,
                     const std::function<void()> &apply_internal_update)
-      : current_objective(dummy),
-        checkCondition(applys_callback),
+      : checkCondition(applys_callback),
         resetInternal(apply_internal_reset),
         updateStep(apply_internal_update) {}
 
-  O dummy;
-  O &current_objective;
+  const O *current_objective;
 
   const std::function<bool()> checkCondition = []() { return false; };
   const std::function<void()> resetInternal = []() {};
@@ -145,22 +140,22 @@ class StoppingConditionNStepsNoProgress : public StoppingCondition<p, false, T> 
             std::bind(&StoppingConditionNStepsNoProgress<p, T>::doInit, this),
             std::bind(&StoppingConditionNStepsNoProgress<p, T>::doStep, this)),
         objective_delta(min_objective_delta.cwiseAbs()),
-        max_steps_no_progress(std::min(max_steps_no_progress, 1u)) {}
+        max_steps_no_progress(std::max(max_steps_no_progress, 1u)) {}
 
  private:
   void doReset() noexcept { steps = 0; }
 
   bool doesApply() const noexcept { return steps >= max_steps_no_progress; }
 
-  void doInit() noexcept { last_objective = this->current_objective; }
+  void doInit() noexcept { last_objective = *this->current_objective; }
 
   void doStep() noexcept {
     steps++;
-    const O diff = last_objective - this->current_objective;
+    const O diff = last_objective - *this->current_objective;
     for (size_t i = 0; i < p; ++i) {
-      if (diff(i, 0) > objective_delta(i, 0)) {
+      if (std::abs(diff(i, 0)) > objective_delta(i, 0)) {
         steps = 0;
-        last_objective = this->current_objective;
+        last_objective = *this->current_objective;
         break;
       }
     }
@@ -192,30 +187,25 @@ class StoppingConditionNStepsNoProgressNorm : public StoppingCondition<p, false,
             std::bind(&StoppingConditionNStepsNoProgressNorm<p, T>::doInit, this),
             std::bind(&StoppingConditionNStepsNoProgressNorm<p, T>::doStep, this)),
         objective_delta(std::abs(min_objective_delta)),
-        max_steps_no_progress(std::min(max_steps_no_progress, 1u)) {}
+        max_steps_no_progress(std::max(max_steps_no_progress, 1u)) {}
 
  private:
   void doReset() noexcept { steps = 0; }
 
   bool doesApply() const noexcept { return steps >= max_steps_no_progress; }
 
-  void doInit() noexcept { last_objective = this->current_objective; }
+  void doInit() noexcept { last_objective = *this->current_objective; }
 
   void doStep() noexcept {
 
-    O diff = last_objective - this->current_objective;
-    for (size_t i = 0; i < p; ++i) {
-      if (diff(i, 0) < 0) {
-        diff(i, 0) = 0;
-      }
-    }
+    O diff = last_objective - *this->current_objective;
     const bool no_progress = diff.norm() < objective_delta;
 
     if (no_progress) {
       steps++;
     } else {
       steps = 0;
-      last_objective = this->current_objective;
+      last_objective = *this->current_objective;
     }
   }
 
@@ -239,7 +229,7 @@ class StoppingConditionSmallDerivative : public StoppingCondition<p, true, T> {
             std::bind(&StoppingConditionSmallDerivative<p, T>::doesApply, this),
             std::bind(&StoppingConditionSmallDerivative<p, T>::doReset, this),
             std::bind(&StoppingConditionSmallDerivative<p, T>::doStep, this)),
-        max_steps(std::min(max_steps, 1u)),
+        max_steps(std::max(max_steps, 1u)),
         threshold(threshold_derivative.cwiseAbs()) {}
 
  private:
@@ -250,7 +240,7 @@ class StoppingConditionSmallDerivative : public StoppingCondition<p, true, T> {
   void doStep() noexcept {
     steps++;
     for (size_t i = 0; i < p; ++i) {
-      if (threshold(i, 0) < this->current_objective_derivative(i, 0)) {
+      if (threshold(i, 0) < (*this->current_objective_derivative)(i, 0)) {
         steps = 0;
         break;
       }

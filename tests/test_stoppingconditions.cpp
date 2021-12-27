@@ -25,7 +25,7 @@ BOOST_AUTO_TEST_CASE(test_StoppingConditionMaxSteps) {
   constexpr unsigned MAX_STEPS = 10;
 
   opt::StoppingConditionMaxSteps<P> stop(MAX_STEPS);
-  stop.init(obective);
+  stop.init(&obective);
 
   unsigned i = 0;
   while (!stop.applys() && i < BREAK_IF_FAULT) {
@@ -47,7 +47,7 @@ BOOST_AUTO_TEST_CASE(test_StoppingConditionNStepsNoProgress) {
   constexpr unsigned NUM_STEPS_CANGE = 7;
 
   opt::StoppingConditionNStepsNoProgress<P> stop(MAX_STEPS, obective_min_diff);
-  stop.init(obective);
+  stop.init(&obective);
 
   unsigned i = 0;
   while (!stop.applys() && i < BREAK_IF_FAULT) {
@@ -73,7 +73,7 @@ BOOST_AUTO_TEST_CASE(test_StoppingConditionNStepsNoProgressNorm) {
 
   opt::StoppingConditionNStepsNoProgressNorm<P> stop(MAX_STEPS, obective_min_diff);
 
-  stop.init(obective);
+  stop.init(&obective);
 
   unsigned i = 0;
   while (!stop.applys() && i < BREAK_IF_FAULT) {
@@ -99,7 +99,7 @@ BOOST_AUTO_TEST_CASE(test_StoppingConditionSmallDerivative) {
   constexpr unsigned NUM_STEPS_CANGE = 7;
 
   opt::StoppingConditionSmallDerivative<P> stop(MAX_STEPS, dO_thresh);
-  stop.init(obective, dO);
+  stop.init(&obective, &dO);
 
   unsigned i = 0;
   while (!stop.applys() && i < BREAK_IF_FAULT) {
