@@ -40,7 +40,7 @@ BOOST_AUTO_TEST_CASE(test_StoppingConditionNStepsNoProgress) {
   constexpr unsigned P = 2;
   using O = opt::Objective<P>;
   O obective{0, 0};
-  O obective_min_diff{0.1, 0.1};
+  static const O obective_min_diff{0.1, 0.1};
 
   constexpr unsigned BREAK_IF_FAULT = 100;
   constexpr unsigned MAX_STEPS = 10;
@@ -92,7 +92,7 @@ BOOST_AUTO_TEST_CASE(test_StoppingConditionSmallDerivative) {
   using O = opt::Objective<P>;
   O obective{0, 0};
   O dO{1, 1};
-  O dO_thresh{0.1, 0.1};
+  static const O dO_thresh{0.1, 0.1};
 
   constexpr unsigned BREAK_IF_FAULT = 100;
   constexpr unsigned MAX_STEPS = 10;
