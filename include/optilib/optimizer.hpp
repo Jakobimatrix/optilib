@@ -10,8 +10,9 @@
 
 namespace opt {
 
+enum HESSIAN { AVAIABLE, APPROXIMATE, NO };
 
-template <unsigned p, bool has_derivative, typename T = double>
+template <unsigned p, bool has_derivative, HESSIAN hessian, typename T = double>
 class Optimizer {
  public:
   using Objective = ObjectiveType<p, T>;
@@ -88,12 +89,24 @@ class Optimizer {
   }
 
  protected:
-  Optimizer(const std::function<bool()> &step_function, const ObjectiveFunction &objective_function)
-      : objective_function(objective_function), step(step_function){};
+  Optimizer(const std::function<bool()> &step_function,
+            const ObjectiveFunction &objective_function,
+            const Objective &initial_guess)
+      : objective_function(objective_function),
+        step(step_function),
+        current_objective(initial_guess),
+        current_score(J(initial_guess)){};
 
   Optimizer(const std::function<bool()> &step_function,
-            const std::function<const Objective &()> &getCurrentObjective)
-      : objective_function(objective_function), step(step_function){};
+            const ObjectiveFunction &objective_function,
+            const ObjectiveFunctionDerivative &objective_function_derivative,
+            const Objective &initial_guess)
+      : objective_function(objective_function),
+        objective_function_derivative(objective_function_derivative),
+        step(step_function),
+        current_objective(initial_guess),
+        current_objective_derivative(dJ(initial_guess)),
+        current_score(J(initial_guess)){};
 
   template <class Q = EnableType<has_derivative>>
   typename std::enable_if<std::is_same<Q, TrueType>::value, Objective &>::type getCurrentObjectiveDerivative() noexcept {
@@ -106,6 +119,7 @@ class Optimizer {
     // todo linear constraints, active set methode
     current_objective = o;
     current_score = score;
+    return true;
   }
 
   template <class Q = EnableType<has_derivative>>
@@ -115,14 +129,10 @@ class Optimizer {
     current_objective_derivative = od;
     current_objective = o;
     current_score = score;
+    return true;
   }
 
   void resetOptimizer() {
-    current_score = J(current_objective);
-    if constexpr (has_derivative) {
-      current_objective_derivative = dJ(current_objective);
-    }
-
     for (auto &c : stopping_conditions) {
       c->reset();
     }
@@ -173,12 +183,12 @@ class Optimizer {
 
   const std::function<bool()> step;
 
+  const ObjectiveFunction objective_function;
+  const ObjectiveFunctionDerivative objective_function_derivative;
+
   T current_score = std::numeric_limits<T>::max();
   Objective current_objective;
   Objective current_objective_derivative;
-
-  const ObjectiveFunction objective_function;
-  const ObjectiveFunctionDerivative objective_function_derivative;
 };
 }  // namespace opt
 
