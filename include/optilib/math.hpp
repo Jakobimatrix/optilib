@@ -25,6 +25,14 @@ inline bool isNearlyZero(T v) {
   return min <= v && max >= v;
 }
 
+// https://stackoverflow.com/questions/17719674/c11-fast-constexpr-integer-powers
+constexpr int64_t ipow_(int base, int exp) {
+  return exp > 1 ? ipow_(base, (exp >> 1) + (exp & 1)) * ipow_(base, exp >> 1) : base;
+}
+constexpr int64_t ipow(int base, int exp) {
+  return exp < 1 ? 1 : ipow_(base, exp);
+}
+
 }  // namespace opt
 
 #endif  // MATH_HPP

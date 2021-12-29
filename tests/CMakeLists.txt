@@ -17,6 +17,7 @@ if( Boost_FOUND )
 
   add_executable(test_opti_lib_stopping test_stoppingconditions.cpp)
   add_executable(test_opti_lib_sectioning test_sectioning.cpp)
+  add_executable(test_opti_lib_gradient_sectioning test_gradient_sectioning.cpp)
 
   list(APPEND TARGET_LIBS
       PRIVATE opti_lib
@@ -30,10 +31,14 @@ if( Boost_FOUND )
   target_link_libraries(test_opti_lib_sectioning
                         ${TARGET_LIBS}
                         )
+  target_link_libraries(test_opti_lib_gradient_sectioning
+                        ${TARGET_LIBS}
+                        )
 
   # declares a test with executable
   add_test(NAME test_stopping_conditions COMMAND test_opti_lib_stopping)
   add_test(NAME test_sectioning COMMAND test_opti_lib_sectioning)
+  add_test(NAME test_gradient_sectioning COMMAND test_opti_lib_gradient_sectioning)
 else()
   MESSAGE("BOOST NOT FOUND!! CAN NOT RUN TESTS.")
 endif()

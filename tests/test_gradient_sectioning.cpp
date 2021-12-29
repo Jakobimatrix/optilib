@@ -1,4 +1,4 @@
-#define BOOST_TEST_MODULE sectioning_test TestSuites
+#define BOOST_TEST_MODULE gradient_sectioning_test TestSuites
 #define BOOST_TEST_DYN_LINK
 #include <stdio.h>
 
@@ -7,7 +7,7 @@
 #include <cmath>
 #include <limits>
 #include <numeric>
-#include <optilib/sectioning.hpp>
+#include <optilib/gradient_sectioning.hpp>
 #include <optilib/stoppingcondition.hpp>
 namespace utf = boost::unit_test;
 namespace tt = boost::test_tools;
@@ -15,7 +15,7 @@ namespace tt = boost::test_tools;
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wdisabled-macro-expansion"
 
-BOOST_AUTO_TEST_CASE(test_Sectioning_1d, *utf::tolerance(0.00001)) {
+BOOST_AUTO_TEST_CASE(test_Gradient_Sectioning_1d, *utf::tolerance(0.00001)) {
   constexpr size_t p = 1;
   using O = opt::ObjectiveType<p>;
   static const O MIN_PROGRESS{0.00001};
@@ -35,7 +35,8 @@ BOOST_AUTO_TEST_CASE(test_Sectioning_1d, *utf::tolerance(0.00001)) {
           std::make_shared<opt::StoppingConditionNStepsNoProgress<p>>(8u, MIN_PROGRESS);
       auto stopping_cond_2 = std::make_shared<opt::StoppingConditionMaxSteps<p>>(110);
 
-      opt::Sectioning<p> optimizer(parabular, initial_guess, starting_stepsize, true);
+      opt::GradientSectioning<p, double, true> optimizer(
+          parabular, initial_guess, starting_stepsize, true);
       optimizer.setStoppingCondition(stopping_cond_1);
       optimizer.setStoppingCondition(stopping_cond_2);
 
@@ -71,7 +72,7 @@ BOOST_AUTO_TEST_CASE(test_Sectioning_5d, *utf::tolerance(0.00001)) {
           std::make_shared<opt::StoppingConditionNStepsNoProgress<p>>(24u, MIN_PROGRESS);
       auto stopping_cond_2 = std::make_shared<opt::StoppingConditionMaxSteps<p>>(600);
 
-      opt::Sectioning<p> optimizer(parabular, initial_guess, starting_stepsize, true);
+      opt::GradientSectioning<p> optimizer(parabular, initial_guess, starting_stepsize, true);
       optimizer.setStoppingCondition(stopping_cond_1);
       optimizer.setStoppingCondition(stopping_cond_2);
 
