@@ -4,59 +4,25 @@
 #include <memory>
 #include <vector>
 
+#include "constraints.hpp"
 #include "definitions.hpp"
 #include "stoppingcondition.hpp"
 
 namespace opt {
 
-// <DerivationHolder>
-template <unsigned p, typename T, class Q, typename Enable = void>
-struct DerivationHolder {};
 
-template <unsigned p, typename T, class Q>
-struct DerivationHolder<p, T, Q, std::enable_if_t<std::is_same<Q, TrueType>::value>> {
-  using dO = Objective<p, T>;
-  dO current_objective_derivative;
-};
-
-template <unsigned p, typename T, class Q>
-class DerivationHolder<p, T, Q, std::enable_if_t<std::is_same<Q, FalseType>::value>> {};
-// </DerivationHolder>
-
-// <RecordSteps>
-template <unsigned p, typename T, class Q, typename Enable = void>
-class RecordSteps {};
-
-template <unsigned p, typename T, class Q>
-class RecordSteps<p, T, Q, std::enable_if_t<std::is_same<Q, TrueType>::value>> {
-  using O = Objective<p, T>;
-
+template <unsigned p, bool has_derivative, typename T = double>
+class Optimizer {
  public:
-  const std::vector<O> &getRecordSteps() const noexcept { return steps; }
+  using Objective = ObjectiveType<p, T>;
+  using ObjectiveFunction = ObjectiveFunctionType<p, T>;
+  using ObjectiveFunctionDerivative = ObjectiveFunctionDerivativeType<p, T>;
 
-  void recordStep(const O &current_objective) noexcept {
-    steps.push_back(current_objective);
+  const Objective &getCurrentOptimum() const noexcept {
+    return current_objective;
   }
 
- protected:
-  std::vector<O> steps;
-};
-
-template <unsigned p, typename T, class Q>
-struct RecordSteps<p, T, Q, std::enable_if_t<std::is_same<Q, FalseType>::value>> {};
-// </RecordSteps>
-
-template <unsigned p, bool has_derivative, typename T = double, bool enable_step_record = false>
-class Optimizer : public DerivationHolder<p, T, EnableType<enable_step_record>>,
-                  public RecordSteps<p, T, EnableType<enable_step_record>> {
- public:
-  using O = Objective<p, T>;
-  using dO = Objective<p, T>;
-  using J = ObjectiveFunction<p, T>;
-  using dJdO = ObjectiveFunctionDeviation<p, T>;
-
-  O getCurrentOptimum() noexcept { return current_objective; }
-  O &getCurrentOptimum() const noexcept { return current_objective; }
+  T getCurrentScore() const noexcept { return current_score; }
 
   template <class Q = EnableType<has_derivative>>
   typename std::enable_if<std::is_same<Q, TrueType>::value, void>::type setStoppingCondition(
@@ -64,7 +30,7 @@ class Optimizer : public DerivationHolder<p, T, EnableType<enable_step_record>>,
     if (c == nullptr) {
       return;
     }
-    c->init(&current_objective, &this->current_objective_derivation);
+    c->init(&current_objective, &current_objective_derivative);
     stopping_conditions_with_derivative.push_back(c);
   }
 
@@ -82,22 +48,94 @@ class Optimizer : public DerivationHolder<p, T, EnableType<enable_step_record>>,
     stopping_conditions.push_back(c);
   }
 
+  /*!
+   * \brief Start the optimization until the optimizer
+   * found either the optimum or a stoppingcondition applyes.
+   */
   void start() noexcept {
     if (!step()) {
       return;
     }
     do {
-      if constexpr (enable_step_record) {
-        this->recordStep(current_objective);
-      }
-
       updateStoppingConditions();
     } while (!stop() && step());
   }
 
- protected:
-  Optimizer(const std::function<bool()> &step_function) : step(step_function){};
+  /*!
+   * \brief Calculate the score of the given objective function.
+   * If non linear constraints where defined, quadratic penalty is used.
+   * \param o The objective value at which to evaluate the objective function.
+   * \return the score of the objective function.
+   */
+  T J(const Objective &o) const {
+    T score = objective_function(o);
+    for (const auto &c : nonlinear_constraints) {
+      score += c->getQuadraticPenalty(o);
+    }
+    return score;
+  }
 
+  /*!
+   * \brief Calculate the gradient of the objectife function at the given
+   * objective
+   * \param o The objective value at which to evaluate the objective
+   * functions gradient.
+   * \return the gradient.
+   */
+  template <class Q = EnableType<has_derivative>>
+  typename std::enable_if<std::is_same<Q, TrueType>::value, Objective>::type dJ(const Objective &o) {
+    return this->objective_function_deviation(o);
+  }
+
+ protected:
+  Optimizer(const std::function<bool()> &step_function, const ObjectiveFunction &objective_function)
+      : objective_function(objective_function), step(step_function){};
+
+  Optimizer(const std::function<bool()> &step_function,
+            const std::function<const Objective &()> &getCurrentObjective)
+      : objective_function(objective_function), step(step_function){};
+
+  template <class Q = EnableType<has_derivative>>
+  typename std::enable_if<std::is_same<Q, TrueType>::value, Objective &>::type getCurrentObjectiveDerivative() noexcept {
+    return current_objective_derivative;
+  }
+
+  template <class Q = EnableType<has_derivative>>
+  typename std::enable_if<std::is_same<Q, FalseType>::value, bool>::type setNewOptimum(
+      T score, const Objective &o) {
+    // todo linear constraints, active set methode
+    current_objective = o;
+    current_score = score;
+  }
+
+  template <class Q = EnableType<has_derivative>>
+  typename std::enable_if<std::is_same<Q, TrueType>::value, bool>::type setNewOptimum(
+      T score, const Objective &o, const Objective &od) {
+    // todo linear constraints, active set methode
+    current_objective_derivative = od;
+    current_objective = o;
+    current_score = score;
+  }
+
+  void resetOptimizer() {
+    current_score = J(current_objective);
+    if constexpr (has_derivative) {
+      current_objective_derivative = dJ(current_objective);
+    }
+
+    for (auto &c : stopping_conditions) {
+      c->reset();
+    }
+    if constexpr (has_derivative) {
+      for (auto &c : stopping_conditions_with_derivative) {
+        c->reset();
+      }
+    }
+
+    // todo constraints
+  }
+
+ private:
   bool stop() {
     for (const auto &c : stopping_conditions) {
       if (c->applys()) {
@@ -126,13 +164,21 @@ class Optimizer : public DerivationHolder<p, T, EnableType<enable_step_record>>,
     }
   }
 
-  O current_objective;
-
   // todo std::variant instead of 2 vectors?
   std::vector<std::shared_ptr<StoppingCondition<p, false, T>>> stopping_conditions;
   std::vector<std::shared_ptr<StoppingCondition<p, true, T>>> stopping_conditions_with_derivative;
 
+  std::vector<std::shared_ptr<Constraint<p, true, T>>> linear_constraints;
+  std::vector<std::shared_ptr<Constraint<p, false, T>>> nonlinear_constraints;
+
   const std::function<bool()> step;
+
+  T current_score = std::numeric_limits<T>::max();
+  Objective current_objective;
+  Objective current_objective_derivative;
+
+  const ObjectiveFunction objective_function;
+  const ObjectiveFunctionDerivative objective_function_derivative;
 };
 }  // namespace opt
 

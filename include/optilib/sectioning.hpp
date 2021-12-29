@@ -29,11 +29,11 @@ optimum might be far from the real optimum.
 */
 
 namespace opt {
-template <unsigned p, typename T = double, bool enable_step_record = false>
-class Sectioning : public Optimizer<p, false, T, enable_step_record> {
+template <unsigned p, typename T = double>
+class Sectioning : public Optimizer<p, false, T> {
  public:
-  using O = Objective<p, T>;
-  using J = ObjectiveFunction<p, T>;
+  using Objective = ObjectiveType<p, T>;
+  using ObjectiveFunction = ObjectiveFunctionType<p, T>;
 
   /*!
    * \brief Sectioning Optimization.
@@ -43,13 +43,13 @@ class Sectioning : public Optimizer<p, false, T, enable_step_record> {
    * \param improve_indefinitely If true the step size of the gridsearch will be lowered automatically.
    * In that case only given stopping conditions can stop the optimization process.
    */
-  Sectioning(const J &objective_function, O initial_guess, const O &starting_stepsize, bool improve_indefinitely)
-      : Optimizer<p, false, T, enable_step_record>(
-            std::bind(&Sectioning<p, T, enable_step_record>::step, this)),
+  Sectioning(const ObjectiveFunction &objective_function,
+             Objective initial_guess,
+             const Objective &starting_stepsize,
+             bool improve_indefinitely)
+      : Optimizer<p, false, T>([this]() { return step(); }, objective_function),
         stepsize(starting_stepsize),
-        objective_function(objective_function),
         improve_indefinitely(improve_indefinitely) {
-    this->current_objective = initial_guess;
     reset();
   }
 
@@ -59,9 +59,9 @@ class Sectioning : public Optimizer<p, false, T, enable_step_record> {
    */
   bool step() noexcept {
     const auto step = getNextStep();
-    const auto next_objective = this->current_objective + step;
-    const T next_score = objective_function(next_objective);
-    if (current_score <= next_score) {
+    const auto next_objective = this->getCurrentOptimum() + step;
+    const T next_score = this->J(next_objective);
+    if (this->getCurrentScore() <= next_score) {
       deccelerate();
       if (resetCondition()) {
         resetMomentum();
@@ -70,8 +70,7 @@ class Sectioning : public Optimizer<p, false, T, enable_step_record> {
         }
       }
     } else {
-      this->current_objective = next_objective;
-      current_score = next_score;
+      this->setNewOptimum(next_score, next_objective);
       accelerate();
       num_no_improvements = 0;
     }
@@ -139,7 +138,7 @@ class Sectioning : public Optimizer<p, false, T, enable_step_record> {
   /*!
    * \brief Calaculate the step size for the next step.
    */
-  O getNextStep() const noexcept { return next_step_base * momentum; }
+  Objective getNextStep() const noexcept { return next_step_base * momentum; }
 
   /*!
    * \brief Condition at which we want to change search direction.
@@ -150,24 +149,22 @@ class Sectioning : public Optimizer<p, false, T, enable_step_record> {
    * \brief Reinitialize the optimizer with default values.
    */
   void reset() {
-    this->current_score = objective_function(this->current_objective);
-    next_step_base = O::Zero();
+    this->resetOptimizer();
+    next_step_base = Objective::Zero();
     next_step_base(0, 0) = stepsize(0, 0);
     resetMomentum();
   }
 
   T direction = 1.;
-  O stepsize;
+  Objective stepsize;
   unsigned direction_index = 0u;
-  T current_score = std::numeric_limits<T>::max();
 
   unsigned num_no_improvements = 0;
   const bool improve_indefinitely;
 
-  O next_step_base;
+  Objective next_step_base;
   T acceleration;
   T momentum;
-  J objective_function;
 };
 }  // namespace opt
 

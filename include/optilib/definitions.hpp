@@ -6,17 +6,17 @@
 namespace opt {
 // Objective O in R^p
 template <unsigned p, typename T = double>
-using Objective = Eigen::Matrix<T, p, 1>;
+using ObjectiveType = Eigen::Matrix<T, p, 1>;
 // in R^dim
 
 // Objective Function J(x_1,x_2,..,x_{p}) in R^p -> R
 template <unsigned p, typename T = double>
-using ObjectiveFunction = std::function<T(const Objective<p> &)>;
+using ObjectiveFunctionType = std::function<T(const ObjectiveType<p> &)>;
 
 // dJ/dO in R^p -> R^p
 template <unsigned p, typename T = double>
-using ObjectiveFunctionDeviation =
-    std::function<Objective<p, T>(const Objective<p, T> &)>;
+using ObjectiveFunctionDerivativeType =
+    std::function<ObjectiveType<p, T>(const ObjectiveType<p, T> &)>;
 
 // <EnableType>
 template <bool has_derivative, typename Enable = void>

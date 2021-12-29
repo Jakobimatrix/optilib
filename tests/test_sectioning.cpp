@@ -18,10 +18,10 @@ namespace tt = boost::test_tools;
 
 BOOST_AUTO_TEST_CASE(test_Sectioning_1d, *utf::tolerance(0.00001)) {
   constexpr size_t p = 1;
-  using O = opt::Objective<p>;
+  using O = opt::ObjectiveType<p>;
   static const O MIN_PROGRESS{0.00001};
 
-  const opt::ObjectiveFunction<1> parabular = [](const opt::Objective<1>& o) {
+  const opt::ObjectiveFunctionType<p> parabular = [](const O& o) {
     return o(0, 0) * o(0, 0);
   };
 
