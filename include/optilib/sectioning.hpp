@@ -25,6 +25,15 @@ The momentum calculated here is just an analogy and has no physical meaning.
 2. Reduce the step size by factor 10 each time the "normal sectioning" stops.
 This allows to choose a rather big initial step size if the initial guess of the
 optimum might be far from the real optimum.
+
+Use when:
+1. You dont know the gradient of the objective function
+2. You did try Simplex-Downhill, Partikle Swarm and Gradient-Sectioning
+and on average Sectioning performes better then thouse.
+This might be rarely the case. One example where I found Sectioning
+outperforming the other methods was the tuning of a PID controller. In
+particular first optimizing P, than I than D (than repeat with smaller stepsize)
+yielded in the best controllers following the defined step-response.
 */
 
 namespace opt {
