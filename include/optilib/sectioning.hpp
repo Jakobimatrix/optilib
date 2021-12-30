@@ -38,7 +38,7 @@ yielded in the best controllers following the defined step-response.
 
 namespace opt {
 template <unsigned p, typename T = double, bool debug = false>
-class Sectioning : public Optimizer<p, false, HESSIAN::NO, T> {
+class Sectioning : public Optimizer<p, false, HESSIAN::NO, T, debug> {
  public:
   using Objective = ObjectiveType<p, T>;
   using ObjectiveFunction = ObjectiveFunctionType<p, T>;
@@ -55,15 +55,11 @@ class Sectioning : public Optimizer<p, false, HESSIAN::NO, T> {
              const Objective &initial_guess,
              const Objective &starting_stepsize,
              bool improve_indefinitely)
-      : Optimizer<p, false, HESSIAN::NO, T>(
+      : Optimizer<p, false, HESSIAN::NO, T, debug>(
             [this]() { return step(); }, objective_function, initial_guess),
         stepsize(starting_stepsize),
         improve_indefinitely(improve_indefinitely) {
     reset();
-
-    if constexpr (debug) {
-      debugCurrentStep(getNextStep());
-    }
   }
 
  private:
@@ -75,6 +71,7 @@ class Sectioning : public Optimizer<p, false, HESSIAN::NO, T> {
     const auto next_objective = this->getCurrentOptimum() + step;
     const T next_score = this->J(next_objective);
     if (this->getCurrentScore() <= next_score) {
+      this->debugCurrentStep(next_objective, next_score);
       deccelerate();
       if (resetCondition()) {
         resetMomentum();
@@ -86,9 +83,6 @@ class Sectioning : public Optimizer<p, false, HESSIAN::NO, T> {
       this->setNewOptimum(next_score, next_objective);
       accelerate();
       num_no_improvements = 0;
-    }
-    if constexpr (debug) {
-      debugCurrentStep(step);
     }
     return true;
   }
@@ -168,6 +162,7 @@ class Sectioning : public Optimizer<p, false, HESSIAN::NO, T> {
     this->resetOptimizer();
     next_step_base = Objective::Zero();
     next_step_base(0, 0) = stepsize(0, 0);
+    direction = 1.;
     resetMomentum();
   }
 
@@ -181,32 +176,6 @@ class Sectioning : public Optimizer<p, false, HESSIAN::NO, T> {
   Objective next_step_base;
   T acceleration;
   T momentum;
-
- public:
-  // debug
-  struct DebugInfo {
-    Objective objective;
-    Objective step;
-    T momentum;
-    T score;
-  };
-
-  template <class Q = EnableType<debug>>
-  typename std::enable_if<std::is_same<Q, TrueType>::value, const std::vector<DebugInfo> &>::type getDebugInfo() const
-      noexcept {
-    return debug_info;
-  }
-
- private:
-  template <class Q = EnableType<debug>>
-  typename std::enable_if<std::is_same<Q, TrueType>::value, void>::type debugCurrentStep(
-      const Objective &step) noexcept {
-    debug_info.push_back(
-        {this->getCurrentOptimum(), step, momentum, this->getCurrentScore()});
-  }
-
-
-  std::vector<DebugInfo> debug_info;
 };
 }  // namespace opt
 

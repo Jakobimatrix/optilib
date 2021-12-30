@@ -36,7 +36,7 @@ BOOST_AUTO_TEST_CASE(test_Gradient_Sectioning_1d, *utf::tolerance(0.00001)) {
       auto stopping_cond_2 = std::make_shared<opt::StoppingConditionMaxSteps<p>>(110);
 
       opt::GradientSectioning<p, double, true> optimizer(
-          parabular, initial_guess, starting_stepsize, true);
+          parabular, initial_guess, starting_stepsize);
       optimizer.setStoppingCondition(stopping_cond_1);
       optimizer.setStoppingCondition(stopping_cond_2);
 
@@ -72,7 +72,7 @@ BOOST_AUTO_TEST_CASE(test_Sectioning_5d, *utf::tolerance(0.00001)) {
           std::make_shared<opt::StoppingConditionNStepsNoProgress<p>>(24u, MIN_PROGRESS);
       auto stopping_cond_2 = std::make_shared<opt::StoppingConditionMaxSteps<p>>(600);
 
-      opt::GradientSectioning<p> optimizer(parabular, initial_guess, starting_stepsize, true);
+      opt::GradientSectioning<p> optimizer(parabular, initial_guess, starting_stepsize);
       optimizer.setStoppingCondition(stopping_cond_1);
       optimizer.setStoppingCondition(stopping_cond_2);
 

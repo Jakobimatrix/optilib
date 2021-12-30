@@ -29,7 +29,7 @@ and on average Gradient-Sectioning performes better then thouse.
 
 namespace opt {
 template <unsigned p, typename T = double, bool debug = false>
-class GradientSectioning : public Optimizer<p, false, HESSIAN::NO, T> {
+class GradientSectioning : public Optimizer<p, false, HESSIAN::NO, T, debug> {
  public:
   using Objective = ObjectiveType<p, T>;
   using ObjectiveFunction = ObjectiveFunctionType<p, T>;
@@ -44,17 +44,11 @@ class GradientSectioning : public Optimizer<p, false, HESSIAN::NO, T> {
    */
   GradientSectioning(const ObjectiveFunction &objective_function,
                      const Objective &initial_guess,
-                     const Objective &starting_stepsize,
-                     bool improve_indefinitely)
-      : Optimizer<p, false, HESSIAN::NO, T>(
+                     const Objective &starting_stepsize)
+      : Optimizer<p, false, HESSIAN::NO, T, debug>(
             [this]() { return step(); }, objective_function, initial_guess),
-        stepsize(starting_stepsize),
-        improve_indefinitely(improve_indefinitely) {
+        stepsize(starting_stepsize) {
     reset();
-
-    if constexpr (debug) {
-      debugCurrentStep(getNextStep());
-    }
   }
 
  private:
@@ -62,24 +56,23 @@ class GradientSectioning : public Optimizer<p, false, HESSIAN::NO, T> {
    * \brief The sectioning algorithm.
    */
   bool step() noexcept {
+    if (!has_new_direction) {
+      changeDirection();
+      return true;
+    }
     const auto step = getNextStep();
     const auto next_objective = this->getCurrentOptimum() + step;
     const T next_score = this->J(next_objective);
     if (this->getCurrentScore() <= next_score) {
+      this->debugCurrentStep(next_objective, next_score);
       deccelerate();
       if (resetCondition()) {
         resetMomentum();
-        if (!changeDirection()) {
-          return false;
-        }
+        changeDirection();
       }
     } else {
       this->setNewOptimum(next_score, next_objective);
       accelerate();
-      num_no_improvements = 0;
-    }
-    if constexpr (debug) {
-      debugCurrentStep(step);
     }
     return true;
   }
@@ -87,20 +80,12 @@ class GradientSectioning : public Optimizer<p, false, HESSIAN::NO, T> {
   /*!
    * \brief Calculate the next direction to optimize.
    */
-  bool changeDirection() noexcept {
-    num_no_improvements++;
-    if (num_no_improvements >= p * 2) {
-      if (improve_indefinitely) {
-        num_no_improvements = 0;
-        stepsize *= 0.1;
-      } else {
-        return false;
-      }
+  void changeDirection() noexcept {
+    if (num_no_improvements < 2 && has_new_direction) {
+      next_step_base = -next_step_base;
+      return;
     }
-    if (direction > 0) {
-      direction = -1.;
-      return true;
-    }
+    num_no_improvements = 0;
 
     Objective best_direction = Objective::Zero();
     T best_score = this->getCurrentScore();
@@ -109,7 +94,7 @@ class GradientSectioning : public Optimizer<p, false, HESSIAN::NO, T> {
     constexpr T zero = static_cast<T>(0);
 
     Objective current_direction = Objective::Zero();
-
+    has_new_direction = false;
     constexpr auto num_different_directions = ipow(2, p) - 1;
     for (int i = 0; i < num_different_directions; ++i) {
       T b = static_cast<T>(current_direction(0, 0) + 1 > 1);
@@ -130,8 +115,8 @@ class GradientSectioning : public Optimizer<p, false, HESSIAN::NO, T> {
       const T score2 = this->J(probe2);
 
       if constexpr (debug) {
-        debug_info.push_back({probe1, direction, 1, score1});
-        debug_info.push_back({probe2, -direction, 1, score2});
+        this->debugCurrentStep(probe1, score1);
+        this->debugCurrentStep(probe2, score2);
       }
 
       const bool is_probe1 = score1 < score2;
@@ -141,12 +126,16 @@ class GradientSectioning : public Optimizer<p, false, HESSIAN::NO, T> {
       if (score < best_score) {
         best_direction = probe;
         best_score = score;
+        has_new_direction = true;
       }
     }
 
-    next_step_base = best_direction;
-    this->setNewOptimum(best_score, this->getCurrentOptimum() + best_direction);
-    return true;
+    if (has_new_direction) {
+      next_step_base = best_direction;
+      this->setNewOptimum(best_score, this->getCurrentOptimum() + best_direction);
+      accelerate();
+    }
+    stepsize *= 0.1;
   }
 
   /*!
@@ -155,6 +144,7 @@ class GradientSectioning : public Optimizer<p, false, HESSIAN::NO, T> {
   void resetMomentum() noexcept {
     acceleration = 0.1;
     momentum = 1.;
+    num_no_improvements++;
   }
 
   /*!
@@ -163,6 +153,7 @@ class GradientSectioning : public Optimizer<p, false, HESSIAN::NO, T> {
   void accelerate() noexcept {
     momentum += acceleration;
     acceleration *= 2.;
+    num_no_improvements = 0;
   }
 
   /*!
@@ -195,46 +186,22 @@ class GradientSectioning : public Optimizer<p, false, HESSIAN::NO, T> {
    */
   void reset() {
     this->resetOptimizer();
-    changeDirection();
+    has_new_direction = false;
+    direction = 1.;
+    num_no_improvements = 0;
     resetMomentum();
   }
 
-  T direction = 1.;
   Objective stepsize;
   unsigned direction_index = 0u;
 
-  unsigned num_no_improvements = 0;
-  const bool improve_indefinitely;
+  T direction;
+  unsigned num_no_improvements;
+  bool has_new_direction;
 
   Objective next_step_base;
   T acceleration;
   T momentum;
-
- public:
-  // debug
-  struct DebugInfo {
-    Objective objective;
-    Objective step;
-    T momentum;
-    T score;
-  };
-
-  template <class Q = EnableType<debug>>
-  typename std::enable_if<std::is_same<Q, TrueType>::value, const std::vector<DebugInfo> &>::type getDebugInfo() const
-      noexcept {
-    return debug_info;
-  }
-
- private:
-  template <class Q = EnableType<debug>>
-  typename std::enable_if<std::is_same<Q, TrueType>::value, void>::type debugCurrentStep(
-      const Objective &step) noexcept {
-    debug_info.push_back(
-        {this->getCurrentOptimum(), step, momentum, this->getCurrentScore()});
-  }
-
-
-  std::vector<DebugInfo> debug_info;
 };
 }  // namespace opt
 

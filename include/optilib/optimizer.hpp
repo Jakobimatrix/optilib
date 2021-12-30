@@ -1,6 +1,8 @@
 #ifndef OPTIMIZATION_OPTIMIZE
 #define OPTIMIZATION_OPTIMIZE
 
+#include <chrono>
+#include <fstream>
 #include <memory>
 #include <vector>
 
@@ -10,9 +12,53 @@
 
 namespace opt {
 
+template <unsigned p, class T = double>
+struct DebugInfo {
+
+  using Objective = ObjectiveType<p, T>;
+  Objective objective;
+  T score;
+  unsigned long long time;
+
+  static void printHeader(std::ofstream &file, const char SEPERATOR) {
+    file << "time (ns)" << SEPERATOR << "score";
+    for (int i = 0; i < p; ++i) {
+      file << SEPERATOR << "x" << i;
+    }
+    file << '\n';
+  }
+
+  void print(std::ofstream &file, const char SEPERATOR) const {
+    file << time << SEPERATOR << score;
+    for (unsigned int i = 0; i < p; ++i) {
+      file << SEPERATOR << objective(i, 0);
+    }
+    file << '\n';
+  }
+
+  static void print(std::ofstream &open_file,
+                    const char SEPERATOR,
+                    const std::vector<DebugInfo<p, T>> &info) {
+    if (!open_file.is_open() || open_file.bad()) {
+      return;
+    }
+    printHeader(open_file, SEPERATOR);
+    for (const auto &i : info) {
+      i.print(open_file, SEPERATOR);
+    }
+  }
+
+  unsigned long long static now() {
+    timespec now;
+    clock_gettime(CLOCK_MONOTONIC, &now);
+    return static_cast<unsigned long long>(now.tv_nsec) +
+           static_cast<unsigned long long>(now.tv_sec) * 1'000'000'000ul;
+  }
+};
+
 enum HESSIAN { AVAIABLE, APPROXIMATE, NO };
 
-template <unsigned p, bool has_derivative, HESSIAN hessian, typename T = double>
+template <unsigned p, bool has_derivative, HESSIAN hessian, typename T = double, bool debug = false>
 class Optimizer {
  public:
   using Objective = ObjectiveType<p, T>;
@@ -31,7 +77,7 @@ class Optimizer {
     if (c == nullptr) {
       return;
     }
-    c->init(&current_objective, &current_objective_derivative);
+    c->init(&current_score, &current_objective, &current_objective_derivative);
     stopping_conditions_with_derivative.push_back(c);
   }
 
@@ -45,15 +91,21 @@ class Optimizer {
     if (c == nullptr) {
       return;
     }
-    c->init(&current_objective);
+    c->init(&current_score, &current_objective);
     stopping_conditions.push_back(c);
   }
+
 
   /*!
    * \brief Start the optimization until the optimizer
    * found either the optimum or a stoppingcondition applyes.
    */
   void start() noexcept {
+    time_start = DebugInfo<p, T>::now();
+    if constexpr (debug) {
+      debugCurrentStep(current_objective, current_score);
+    }
+
     if (!step()) {
       return;
     }
@@ -119,6 +171,10 @@ class Optimizer {
     // todo linear constraints, active set methode
     current_objective = o;
     current_score = score;
+
+    if constexpr (debug) {
+      debugCurrentStep(o, score);
+    }
     return true;
   }
 
@@ -129,6 +185,11 @@ class Optimizer {
     current_objective_derivative = od;
     current_objective = o;
     current_score = score;
+
+    if constexpr (debug) {
+      debugCurrentStep(o, score);
+    }
+
     return true;
   }
 
@@ -189,6 +250,31 @@ class Optimizer {
   T current_score = std::numeric_limits<T>::max();
   Objective current_objective;
   Objective current_objective_derivative;
+
+  // DEBUGGING
+ public:
+  template <class Q = EnableType<debug>>
+  typename std::enable_if<std::is_same<Q, TrueType>::value, const std::vector<DebugInfo<p, T>> &>::type getDebugInfo() const
+      noexcept {
+    return debug_info;
+  }
+
+ protected:
+  template <class Q = EnableType<debug>>
+  typename std::enable_if<std::is_same<Q, TrueType>::value, void>::type debugCurrentStep(
+      const Objective &o, const T score) noexcept {
+    const auto now = DebugInfo<p, T>::now();
+    const auto duration = now - time_start;
+    debug_info.push_back({o, score, duration});
+  }
+
+  template <class Q = EnableType<debug>>
+  typename std::enable_if<std::is_same<Q, FalseType>::value, void>::type debugCurrentStep(
+      const Objective &o, const T score) noexcept {}
+
+ private:
+  std::vector<DebugInfo<p, T>> debug_info;
+  unsigned long long time_start;
 };
 }  // namespace opt
 

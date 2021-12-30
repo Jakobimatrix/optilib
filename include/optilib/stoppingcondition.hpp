@@ -2,6 +2,7 @@
 #define OPTIMIZATION_STOPPINGCONDITION
 
 #include <algorithm>
+#include <chrono>
 
 #include "definitions.hpp"
 
@@ -45,15 +46,18 @@ class StoppingCondition
    */
   template <class Q = EnableType<needs_derivative>>
   typename std::enable_if<std::is_same<Q, TrueType>::value, void>::type init(
-      const O *current_objective_ptr, const O *current_objective_derivative_ptr) {
+      const T *current_score_ptr, const O *current_objective_ptr, const O *current_objective_derivative_ptr) {
     current_objective = current_objective_ptr;
+    current_score = current_score_ptr;
     this->current_objective_derivative = current_objective_derivative_ptr;
     reset();
   }
 
   template <class Q = EnableType<needs_derivative>>
-  typename std::enable_if<std::is_same<Q, FalseType>::value, void>::type init(const O *current_objective_ptr) {
+  typename std::enable_if<std::is_same<Q, FalseType>::value, void>::type init(
+      const T *current_score_ptr, const O *current_objective_ptr) {
     current_objective = current_objective_ptr;
+    current_score = current_score_ptr;
     reset();
   }
 
@@ -85,11 +89,86 @@ class StoppingCondition
   const O &getCurrentObjective() const noexcept { return *current_objective; }
 
   const O *current_objective;
+  const T *current_score;
 
  private:
   const std::function<bool()> checkCondition = []() { return false; };
   const std::function<void()> resetInternal = []() {};
   const std::function<void()> updateStep = []() {};
+};
+
+template <unsigned p, typename T = double>
+class StoppingConditionTargetScore : public StoppingCondition<p, false, T> {
+ public:
+  /*!
+   * \brief Stop when score is below target
+   * \param target_score The minimal target
+   */
+  StoppingConditionTargetScore(T target_score)
+      : StoppingCondition<p, false, T>([this]() { return doesApply(); },
+                                       [this]() { return doReset(); },
+                                       [this]() { return doStep(); }),
+        target_score(target_score) {}
+
+ private:
+  void doReset() noexcept { steps = 0; }
+
+  bool doesApply() const noexcept {
+    return target_score >= *this->current_score;
+  }
+
+  void doStep() noexcept {}
+
+  unsigned steps = 0;
+  const T target_score;
+};
+
+template <unsigned p, typename T = double>
+class StoppingConditionMaxExecutionTime : public StoppingCondition<p, false, T> {
+ public:
+  /*!
+   * \brief Stop when the time limit will be exceeded before the next
+   * calculation.
+   * \param max_execution_time_ns The time limit in nanoseconds.
+   */
+  StoppingConditionMaxExecutionTime(unsigned long long max_execution_time_ns)
+      : StoppingCondition<p, false, T>([this]() { return doesApply(); },
+                                       [this]() { return doReset(); },
+                                       [this]() { return doStep(); }),
+        max_execution_time_ns(max_execution_time_ns) {}
+
+  unsigned long long static now() {
+    timespec now;
+    clock_gettime(CLOCK_MONOTONIC, &now);
+    return static_cast<unsigned long long>(now.tv_nsec) +
+           static_cast<unsigned long long>(now.tv_sec) * 1'000'000'000ul;
+  }
+
+ private:
+  void doReset() noexcept {
+    unsigned long long average_step_time = 0;
+    unsigned num_measurements = 0;
+    start = now();
+  }
+
+  bool doesApply() const noexcept {
+    const auto rightnow = now();
+    const auto time_spent = rightnow - start;
+    printf("%llu <= %llu + %llu\n", max_execution_time_ns, time_spent, average_step_time);
+    return max_execution_time_ns <= time_spent + average_step_time;
+  }
+
+  void doStep() noexcept {
+    const auto rightnow = now();
+    const auto time_spent = rightnow - start;
+    average_step_time = time_spent / ++num_measurements;
+    printf("average: %llu\n", average_step_time);
+  }
+
+  unsigned long long average_step_time = 0;
+  unsigned num_measurements = 0;
+  unsigned long long start = now();
+  const unsigned long long max_execution_time_ns;
 };
 
 template <unsigned p, typename T = double>
