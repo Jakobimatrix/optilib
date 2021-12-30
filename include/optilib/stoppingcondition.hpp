@@ -154,7 +154,6 @@ class StoppingConditionMaxExecutionTime : public StoppingCondition<p, false, T> 
   bool doesApply() const noexcept {
     const auto rightnow = now();
     const auto time_spent = rightnow - start;
-    printf("%llu <= %llu + %llu\n", max_execution_time_ns, time_spent, average_step_time);
     return max_execution_time_ns <= time_spent + average_step_time;
   }
 
@@ -162,7 +161,6 @@ class StoppingConditionMaxExecutionTime : public StoppingCondition<p, false, T> 
     const auto rightnow = now();
     const auto time_spent = rightnow - start;
     average_step_time = time_spent / ++num_measurements;
-    printf("average: %llu\n", average_step_time);
   }
 
   unsigned long long average_step_time = 0;

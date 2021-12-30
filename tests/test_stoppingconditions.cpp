@@ -8,7 +8,6 @@
 #include <limits>
 #include <numeric>
 #include <optilib/stoppingcondition.hpp>
-#include <thread>
 
 namespace utf = boost::unit_test;
 namespace tt = boost::test_tools;
@@ -151,24 +150,41 @@ BOOST_AUTO_TEST_CASE(test_StoppingConditionMaxExecutionTime) {
   O obective{0, 0};
   O dO{1, 1};
 
-  constexpr unsigned BREAK_IF_FAULT = 100;
-  constexpr unsigned long long MAX_EXEC_TIME_NS = 1'000'000;
-  constexpr unsigned NUM_STEPS_CANGE = 7;
+  constexpr unsigned BREAK_IF_FAULT = 1000;
+  constexpr unsigned long long MAX_EXEC_TIME_NS = 10'000'000;
+  constexpr unsigned long long TASK_TIME = 1'000;
 
   double score = 100;
 
-  opt::StoppingConditionMaxExecutionTime<P> stop(MAX_EXEC_TIME_NS);
-  stop.init(&score, &obective);
+  int num_fails = 0;
+  constexpr int NUM_ACCEPTED_FAILS_IN_100 = 1;
+  // If the cpu pauses the optimizer in the wrong moment we will exceed the timelimit.
+  // This might be less of a problem when running on a real time kernel.
+  for (int l = 0; l < 100; ++l) {
 
-  const auto start = opt::StoppingConditionMaxExecutionTime<P>::now();
-  unsigned i = 0;
-  while (!stop.applys() && i < BREAK_IF_FAULT) {
-    i++;
-    std::this_thread::sleep_for(std::chrono::nanoseconds(5000));
-    stop.step();
+    opt::StoppingConditionMaxExecutionTime<P> stop(MAX_EXEC_TIME_NS);
+    stop.init(&score, &obective);
+
+    unsigned i = 0;
+    const auto start = opt::StoppingConditionMaxExecutionTime<P>::now();
+    while (!stop.applys() && i < BREAK_IF_FAULT) {
+      const auto task_start = opt::StoppingConditionMaxExecutionTime<P>::now();
+      i++;
+      bool task_finnished = false;
+      while (!task_finnished) {
+        const auto duration = opt::StoppingConditionMaxExecutionTime<P>::now() - task_start;
+        task_finnished = duration >= TASK_TIME;
+      }
+
+      stop.step();
+    }
+    const auto end = opt::StoppingConditionMaxExecutionTime<P>::now();
+
+    if (MAX_EXEC_TIME_NS < end - start) {
+      num_fails++;
+    }
   }
-  const auto end = opt::StoppingConditionMaxExecutionTime<P>::now();
-  BOOST_TEST(MAX_EXEC_TIME_NS >= end - start);
+  BOOST_TEST(NUM_ACCEPTED_FAILS_IN_100 > num_fails);
 }
 
 #pragma clang diagnostic pop
