@@ -44,7 +44,6 @@ BOOST_AUTO_TEST_CASE(test_Gradient_Sectioning_1d, *utf::tolerance(0.00001)) {
       const auto optimum = optimizer.getCurrentOptimum();
 
       BOOST_TEST(optimum(0, 0) == 0);
-      return;
     }
   }
 }

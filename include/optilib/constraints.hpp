@@ -92,22 +92,34 @@ class Constraint : public ConstraintVariableHolder<p, T, EnableType<is_linear>> 
 
   T operator()(const Objective &o) const { return constraint_f(o); }
 
+  /*!
+   * \brief Checks if a given objective is inside the constraint.
+   * \param o The objective to check.
+   * \return True if the given objective is inside the constraint.
+   */
   bool isRespected(const Objective &o) const {
     return constraint_f(o) >= static_cast<T>(0.);
   }
 
+  /*!
+   * \brief Returns the intersection of the linear gradient with a given line O(t) = A*t + B.
+   * \param intercept The intercept (B) of the line.
+   * \param gradient The gradient (A) of the Line.
+   * \param intersection This will hold the calculated intersection.
+   * \return True if the gintersection could be calculated (Fails when given two parallel lines).
+   */
   template <class Q = EnableType<is_linear>>
   typename std::enable_if<std::is_same<Q, TrueType>::value, bool>::type getIntersection(
       const Objective &intercept, const Objective &gradient, Objective &intersection) const
       noexcept {
-    /*The Vector O(t) = A*t + B
+    /* The Vector O(t) = A*t + B
      * must satisfy the constraint a*O(t) = b
      * -> a*[A*t + B] = b
      * a*A*t + a*B = b
      * t = (b - a*B)/a*A
      */
 
-    const auto aA = this->a * gradient;
+    const T aA = this->a * gradient;
     if (isNearlyZero(aA)) {
       return false;
     }
@@ -117,6 +129,11 @@ class Constraint : public ConstraintVariableHolder<p, T, EnableType<is_linear>> 
     return true;
   }
 
+  /*!
+   * \brief Calculate the penalty value (for non linear constraint) for a given objective. This is ment to be added to the value of the objective function.
+   * \param o The Objective to check if inside constraint.
+   * \return Zero if the objective is not violating the constraint. A positive high value otherwize.
+   */
   template <class Q = EnableType<is_linear>>
   typename std::enable_if<std::is_same<Q, FalseType>::value, T>::type getQuadraticPenalty(const Objective &o) {
     const auto penalty = constraint_f(o);

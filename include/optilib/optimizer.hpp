@@ -14,7 +14,7 @@ namespace opt {
 
 template <unsigned p, class T = double>
 struct DebugInfo {
-
+  EIGEN_MAKE_ALIGNED_OPERATOR_NEW
   using Objective = ObjectiveType<p, T>;
   Objective objective;
   T score;
@@ -56,7 +56,9 @@ struct DebugInfo {
   }
 };
 
-enum HESSIAN { AVAIABLE, APPROXIMATE, NO };
+
+
+enum HESSIAN { AVAIABLE_QUADRATIC, AVAIABLE, APPROXIMATE, NO };
 
 template <unsigned p, bool has_derivative, HESSIAN hessian, typename T = double, bool debug = false>
 class Optimizer {
@@ -165,10 +167,46 @@ class Optimizer {
     return current_objective_derivative;
   }
 
+  template <class Q = EnableType<hessian == AVAIABLE_QUADRATIC>>
+  typename std::enable_if<std::is_same<Q, TrueType>::value, bool>::type isObjectiveWithinConstrains(
+      Objective &o) {
+    assert(false && "NOT IMPLEMENTED YET");
+
+    // active set method
+    return false;
+  }
+
+  /*!
+   * \brief Checks if a given objective is inside all linear constraints. If it is outside
+   * the given objective will be set to the intersection between the constraint and the
+   * vector 'from the given objective in direction of griven gradient'
+   * \param o Given Objective to correct if necessarry.
+   * \param gradient The direction in which to correct the objective if necessarry.
+   * \return False if the objective had to be corrected and was altered. True otherwise.
+   */
+  template <class Q = EnableType<hessian == AVAIABLE_QUADRATIC>>
+  typename std::enable_if<std::is_same<Q, FalseType>::value, bool>::type isObjectiveWithinConstrains(
+      Objective &o, Objective &gradient) {
+    if (linear_constraints.empty()) {
+      return true;
+    }
+    // all linear constraints must be checked
+    // the nonlinear (if any are inside the objective function)
+    bool corrected = false;
+    const auto given_gradient = gradient;
+    for (const auto &c : linear_constraints) {
+      if (!c->isRespected(o)) {
+        if (c->getIntersection(o, given_gradient, o)) {
+          corrected = true;
+        }
+      }
+    }
+    return !corrected;
+  }
+
   template <class Q = EnableType<has_derivative>>
   typename std::enable_if<std::is_same<Q, FalseType>::value, bool>::type setNewOptimum(
       T score, const Objective &o) {
-    // todo linear constraints, active set methode
     current_objective = o;
     current_score = score;
 
@@ -181,7 +219,6 @@ class Optimizer {
   template <class Q = EnableType<has_derivative>>
   typename std::enable_if<std::is_same<Q, TrueType>::value, bool>::type setNewOptimum(
       T score, const Objective &o, const Objective &od) {
-    // todo linear constraints, active set methode
     current_objective_derivative = od;
     current_objective = o;
     current_score = score;

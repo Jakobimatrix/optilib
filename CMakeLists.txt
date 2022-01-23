@@ -16,6 +16,28 @@ target_include_directories(${PROJECT_NAME} INTERFACE "${CMAKE_CURRENT_SOURCE_DIR
 target_compile_features(${PROJECT_NAME} INTERFACE cxx_std_17)
 
 
+# Eigen without EIGEN_MAKE_ALIGNED_OPERATOR_NEW requires GCC>=7, clang>=5, MSVC>=19.12 and CPP17
+if ("${CMAKE_CXX_COMPILER_ID}" STREQUAL "MSVC")
+    if(CMAKE_CXX_COMPILER_VERSION LESS 1912)
+        message( FATAL_ERROR "If you compile this with MSVC you need at least the version 19.12." )
+    endif()
+endif()
+
+if ("${CMAKE_CXX_COMPILER_ID}" STREQUAL "GNU")
+    if (CMAKE_CXX_COMPILER_VERSION LESS 7)
+        message( FATAL_ERROR "If you compile this with GNU you need at least the version 7." )
+    endif()
+endif()
+
+if ("${CMAKE_CXX_COMPILER_ID}" STREQUAL "Clang")
+    if (CMAKE_CXX_COMPILER_VERSION LESS 5)
+        message( FATAL_ERROR "If you compile this with Clang you need at least the version 5." )
+    endif()
+endif()
+
+
+
+
 option(TEST_SETTINGS "Build tests for ${PROJECT_NAME}" TRUE)
 if(TEST_SETTINGS)
   enable_testing()

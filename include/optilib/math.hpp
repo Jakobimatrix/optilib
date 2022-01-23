@@ -19,8 +19,9 @@ inline bool isNearlyZero(T v) {
   constexpr int factor = 7;
   constexpr T zero(static_cast<T>(0.));
 
-  constexpr T min = -std::nextafter(zero, std::numeric_limits<T>::lowest()) * factor;
-  constexpr T max = std::nextafter(zero, std::numeric_limits<T>::max()) * factor;
+  /*constexpr*/ const T min =
+      -std::nextafter(zero, std::numeric_limits<T>::lowest()) * factor;
+  /*constexpr*/ const T max = std::nextafter(zero, std::numeric_limits<T>::max()) * factor;
 
   return min <= v && max >= v;
 }

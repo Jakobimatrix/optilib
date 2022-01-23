@@ -68,7 +68,9 @@ class Sectioning : public Optimizer<p, false, HESSIAN::NO, T, debug> {
    */
   bool step() noexcept {
     const auto step = getNextStep();
-    const auto next_objective = this->getCurrentOptimum() + step;
+    Objective next_objective = this->getCurrentOptimum() + step;
+    const bool force_direction_change = checkConstraintsAdjustDirection(next_objective);
+
     const T next_score = this->J(next_objective);
     if (this->getCurrentScore() <= next_score) {
       this->debugCurrentStep(next_objective, next_score);
@@ -81,8 +83,11 @@ class Sectioning : public Optimizer<p, false, HESSIAN::NO, T, debug> {
       }
     } else {
       this->setNewOptimum(next_score, next_objective);
+      if (force_direction_change) {
+        resetMomentum();
+        changeDirection();
+      }
       accelerate();
-      num_no_improvements = 0;
     }
     return true;
   }
@@ -91,7 +96,6 @@ class Sectioning : public Optimizer<p, false, HESSIAN::NO, T, debug> {
    * \brief Calculate the next direction to optimize.
    */
   bool changeDirection() noexcept {
-    num_no_improvements++;
     if (num_no_improvements >= p * 2) {
       if (improve_indefinitely) {
         num_no_improvements = 0;
@@ -104,6 +108,10 @@ class Sectioning : public Optimizer<p, false, HESSIAN::NO, T, debug> {
       direction = -1.;
     } else {
       direction = 1.;
+      if (step_along_constraint) {
+        next_step_base = Objective::Zero();
+        step_along_constraint = false;
+      }
       next_step_base(direction_index) = static_cast<T>(0.);
       direction_index++;
       if (direction_index >= p) {
@@ -115,9 +123,21 @@ class Sectioning : public Optimizer<p, false, HESSIAN::NO, T, debug> {
   }
 
   /*!
+   * \brief Checks if a given objective is outside all linear constraints. If it is outside
+   * the given objective will be set to the intersection between the constraint and the
+   * line 'last valide objective - given objective'
+   * \param o Given Objective to correct if necessarry.
+   * \return true if the objective had to be corrected and was altered. False otherwise.
+   */
+  bool checkConstraintsAdjustDirection(Objective &o) {
+    return !this->isObjectiveWithinConstrains(o, next_step_base);
+  }
+
+  /*!
    * \brief Reset internal momentum.
    */
   void resetMomentum() noexcept {
+    num_no_improvements++;
     acceleration = 0.1;
     momentum = 1.;
   }
@@ -128,6 +148,7 @@ class Sectioning : public Optimizer<p, false, HESSIAN::NO, T, debug> {
   void accelerate() noexcept {
     momentum += acceleration;
     acceleration *= 2.;
+    num_no_improvements = 0;
   }
 
   /*!
@@ -163,10 +184,12 @@ class Sectioning : public Optimizer<p, false, HESSIAN::NO, T, debug> {
     next_step_base = Objective::Zero();
     next_step_base(0, 0) = stepsize(0, 0);
     direction = 1.;
+    step_along_constraint = false;
     resetMomentum();
   }
 
   T direction = 1.;
+  bool step_along_constraint;
   Objective stepsize;
   unsigned direction_index = 0u;
 
