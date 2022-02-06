@@ -18,8 +18,6 @@ It will approximate the optimum in few steps.
 Disadvantage:
 1. Finding the true optimum might take very long depending on the surface. I suggest
 to use it only to approximate the optimum and than use Sectioning if a better score is needed.
-
-
 */
 
 namespace opt {
@@ -99,16 +97,25 @@ class SimplexDownhill : public Optimizer<p, false, HESSIAN::NO, T, debug> {
     // 1. Get closest point on Hyperplane (spanned by all vertices except worst) to the worst.
 
     const auto mirror_point = simplex.getMirrorPoint();
-    const HyperLine<p, T> move_along_line{simplex.getWorstVertex(), mirror_point};
+    const auto& worst_vertex = simplex.getWorstVertex();
+    const HyperLine<p, T> move_along_line{worst_vertex, mirror_point};
+
+    const auto move_along_line_with_constraints =
+        [&worst_vertex, &move_along_line, this](T value) {
+          Objective point = move_along_line.getPoint(value);
+          const auto direction = point - worst_vertex;
+          this->isObjectiveWithinConstrains(point, direction);
+          return point;
+        };
 
     // REFLECT
-    const auto reflection = move_along_line.getPoint(REFELEXION_VALUE);
+    const auto reflection = move_along_line_with_constraints(REFELEXION_VALUE);
     const T reflection_score = this->J(reflection);
 
     if (reflection_score < this->getCurrentScore()) {
       this->debugCurrentStep(reflection, reflection_score);
       // TRY EXPAND
-      const auto expanded = move_along_line.getPoint(EXPANSION_VALUE);
+      const auto expanded = move_along_line_with_constraints(EXPANSION_VALUE);
       const T expanded_score = this->J(expanded);
       if (expanded_score < reflection_score) {
         // USE EXPANSION
@@ -126,7 +133,8 @@ class SimplexDownhill : public Optimizer<p, false, HESSIAN::NO, T, debug> {
     } else if (reflection_score < simplex.getWorstVertexScore()) {
       this->debugCurrentStep(reflection, reflection_score);
       // TRY OUTER CONTRACTION
-      const auto outer_contraction = move_along_line.getPoint(OUTER_CONTRACTION_VALUE);
+      const auto outer_contraction =
+          move_along_line_with_constraints(OUTER_CONTRACTION_VALUE);
       const T outer_contraction_score = this->J(outer_contraction);
 
       if (outer_contraction_score > reflection_score) {
@@ -140,7 +148,7 @@ class SimplexDownhill : public Optimizer<p, false, HESSIAN::NO, T, debug> {
 
     } else {
       this->debugCurrentStep(reflection, reflection_score);
-      // TRY INNER CONTRACTION
+      // TRY INNER CONTRACTION (Can not violate linear constraint)
       const auto inner_contraction = move_along_line.getPoint(INNER_CONTRACTION_VALUE);
       const T inner_contraction_score = this->J(inner_contraction);
       if (inner_contraction_score > simplex.getWorstVertexScore()) {
@@ -177,16 +185,42 @@ class SimplexDownhill : public Optimizer<p, false, HESSIAN::NO, T, debug> {
   }
 
   void reset() {
+    const auto& best_guess = this->getCurrentOptimum();
     simplex.vertices.clear();
-    simplex.vertices.emplace(this->getCurrentScore(), this->getCurrentOptimum());
+    simplex.vertices.emplace(this->getCurrentScore(), best_guess);
 
-    Objective vertex = this->getCurrentOptimum();
+    const auto saveVertex = [this](const Objective& o) {
+      const T score = this->J(o);
+      simplex.vertices.emplace(score, o);
+      this->debugCurrentStep(o, score);
+    };
+
+    Objective vertex = best_guess;
+    Objective direction = Objective::Zero();
     for (unsigned i = 0; i < p; ++i) {
-      vertex(i, 0) += initial_step_size(i, 0);
-      const T score = this->J(vertex);
-      simplex.vertices.emplace(score, vertex);
-      this->debugCurrentStep(vertex, score);
-      vertex(i, 0) -= initial_step_size(i, 0);
+      direction(i, 0) = initial_step_size(i, 0);
+      vertex(i, 0) = best_guess(i, 0) + initial_step_size(i, 0);
+
+      if (!this->isObjectiveWithinConstrains(vertex, direction)) {
+        const auto corrected_vertex = vertex;
+        direction(i, 0) = -initial_step_size(i, 0);
+        vertex(i, 0) = best_guess(i, 0) - initial_step_size(i, 0);
+
+        if (!this->isObjectiveWithinConstrains(vertex, direction)) {
+          const auto& new_corrected_vertex = vertex;
+          if ((best_guess - corrected_vertex).norm() >
+              (best_guess - new_corrected_vertex).norm()) {
+            saveVertex(corrected_vertex);
+          } else {
+            saveVertex(new_corrected_vertex);
+          }
+        }
+      } else {
+        saveVertex(vertex);
+      }
+
+      vertex(i, 0) = best_guess(i, 0);
+      direction(i, 0) = 0;
     }
   }
 

@@ -186,7 +186,7 @@ class Optimizer {
    */
   template <class Q = EnableType<hessian == AVAIABLE_QUADRATIC>>
   typename std::enable_if<std::is_same<Q, FalseType>::value, bool>::type isObjectiveWithinConstrains(
-      Objective &o, Objective &gradient) {
+      Objective &o, const Objective &gradient) {
     if (linear_constraints.empty()) {
       return true;
     }
