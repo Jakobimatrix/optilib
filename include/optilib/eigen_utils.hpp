@@ -105,7 +105,7 @@ struct HyperLine {
 template <unsigned dim, class T>
 struct HyperPlane {
   static constexpr unsigned END_V = dim - 1;
-  static constexpr unsigned INDEX_Vn = dim;
+  static constexpr unsigned INDEX_Vn = dim - 1;
 
   using Point = XdPoint<dim, T>;
   using HyperSpacePoint = XdPoint<dim - 1, T>;
@@ -233,14 +233,16 @@ struct HyperPlane {
     const T max_a = A.matrix().cwiseAbs().maxCoeff();
     const T epsilon = getEpsilon(max_a);
 
-    unsigned index_i = dim - 1;
-    for (; index_i >= -1; --index_i) {
+    unsigned index_i = 0;
+    bool found_nonzero = false;
+    for (; index_i < dim; ++index_i) {
       if (!isNearlyZero(A(0, index_i), epsilon)) {
+        found_nonzero = true;
         break;
       }
     }
 
-    assert(index_i > -1 && "HyperPlane:: Given A matrix is zero!");
+    assert(found_nonzero && "HyperPlane:: Given A matrix is zero!");
 
     for (size_t i = 0; i < index_i; ++i) {
       hyper_plane_parameters[i] = Point::Zero();

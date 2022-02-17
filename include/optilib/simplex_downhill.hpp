@@ -216,36 +216,26 @@ class SimplexDownhill : public Optimizer<p, false, HESSIAN::NO, T, debug> {
 
   bool rankLoss(std::shared_ptr<Constraint<p, true, T>> constraint) {
     if constexpr (p == 1) {
-      return false;  // in 1 d we found the optimum.
+      return false;  // in 1 d we found the optimum if rank loss.
     } else {
-      Objective init_step_size = simplex.getExpansion();
-      reset(init_step_size);
-      const auto test = simplex.getExpansion();
-      for (unsigned i = 0; i < p; ++i) {
-        if (test(i, 0) < RANK_LOSS) {
-          if (p <= 1) {
-            return false;
-          }
-          const auto& hp = constraint->getHyperPlane();
+      const auto& hp = constraint->getHyperPlane();
 
-          using Objective_ = ObjectiveType<p - 1, T>;
-          const ObjectiveFunctionType<p - 1> J_ = [this, &hp](const Objective_& o) {
-            return this->J((*hp)(o));
-          };
+      using Objective_ = ObjectiveType<p - 1, T>;
+      const ObjectiveFunctionType<p - 1> J_ = [this, &hp](const Objective_& o) {
+        return this->J((*hp)(o));
+      };
 
-          std::multimap<T, Objective_> vertices_;
-          auto it = simplex.vertices.begin();
-          const auto end = --simplex.vertices.end();
-          while (it != end) {
-            vertices_.emplace(it->first, hp->inv(it->second));
-          }
-
-          auto optimizer = std::make_shared<SimplexDownhill<p - 1, T, debug>>(J_, vertices_);
-
-          return this->searchOnConstraint(constraint, optimizer);
-        }
+      std::multimap<T, Objective_> vertices_;
+      auto it = simplex.vertices.begin();
+      const auto end = --simplex.vertices.end();
+      while (it != end) {
+        vertices_.emplace(it->first, hp->inv(it->second));
+        ++it;
       }
-      return true;
+
+      auto optimizer = std::make_shared<SimplexDownhill<p - 1, T, debug>>(J_, vertices_);
+
+      return this->searchOnConstraint(constraint, optimizer);
     }
   }
 

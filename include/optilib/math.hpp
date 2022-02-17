@@ -28,7 +28,7 @@ inline bool isNearlyZero(T v) {
 
 template <class T>
 constexpr bool isNearlyZero(T value, T epsilon) {
-  return value <= -epsilon || epsilon <= value;
+  return -epsilon <= value && value <= epsilon;
 }
 
 
