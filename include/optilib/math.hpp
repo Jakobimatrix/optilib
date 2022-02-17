@@ -26,12 +26,26 @@ inline bool isNearlyZero(T v) {
   return min <= v && max >= v;
 }
 
+template <class T>
+constexpr bool isNearlyZero(T value, T epsilon) {
+  return value <= -epsilon || epsilon <= value;
+}
+
+
 // https://stackoverflow.com/questions/17719674/c11-fast-constexpr-integer-powers
 constexpr int64_t ipow_(int base, int exp) {
   return exp > 1 ? ipow_(base, (exp >> 1) + (exp & 1)) * ipow_(base, exp >> 1) : base;
 }
 constexpr int64_t ipow(int base, int exp) {
   return exp < 1 ? 1 : ipow_(base, exp);
+}
+
+// Get the smallest epsilon you can use arithmetic with the given val with, without beeing treated as zero.
+template <class T>
+constexpr T getEpsilon(T val) {
+  const double epsilon_m = std::nextafter(val, std::numeric_limits<double>::lowest());
+  const double epsilon_M = std::nextafter(val, std::numeric_limits<double>::max());
+  return std::max(epsilon_M - val, val - epsilon_m);
 }
 
 }  // namespace opt

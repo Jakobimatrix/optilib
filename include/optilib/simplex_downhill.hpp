@@ -65,28 +65,57 @@ struct Simplex {
     return mp;
   }
 
+  Objective getExpansion() const noexcept {
+    Objective expansion = Objective::Zero();
+    auto it = vertices.begin();
+    const auto end = vertices.end();
+    const auto& best = getBestVertex();
+    while (++it != end) {
+      const Objective diff_abs = (it->second - best).cwiseAbs();
+      expansion = expansion.cwiseMax(diff_abs);
+    }
+    return expansion;
+  }
+
   std::multimap<T, Objective> vertices;
 };
 
 template <unsigned p, typename T = double, bool debug = false>
 class SimplexDownhill : public Optimizer<p, false, HESSIAN::NO, T, debug> {
+  friend SimplexDownhill<p + 1, T, debug>;
+
  public:
   using Objective = ObjectiveType<p, T>;
   using ObjectiveFunction = ObjectiveFunctionType<p, T>;
+  static constexpr T RANK_LOSS = 0.000001;
 
   /*!
    * \brief SimplexDownhill Optimization.
    * \param objective_function The objective function to be minimized.
    * \param initial_guess The best guess of the location of the minima of the objective function.
-   * \param starting_stepsize A hint about how big the initial simplex needs to be in every search direction.
+   * \param initial_step_size A hint about how big the initial simplex needs to be in every search direction.
    */
   SimplexDownhill(const ObjectiveFunction& objective_function,
                   const Objective& initial_guess,
-                  const Objective& step_size)
+                  const Objective& initial_step_size)
       : Optimizer<p, false, HESSIAN::NO, T, debug>(
-            [this]() { return step(); }, objective_function, initial_guess),
-        initial_step_size(step_size) {
-    reset();
+            [this]() { return step(); }, objective_function, initial_guess) {
+    reset(initial_step_size);
+  }
+
+  /*!
+   * \brief SimplexDownhill Optimization.
+   * \param objective_function The objective function to be minimized.
+   * \param initial_guesses
+   */
+  SimplexDownhill(const ObjectiveFunction& objective_function,
+                  const std::multimap<T, Objective>& vertices)
+      : Optimizer<p, false, HESSIAN::NO, T, debug>([this]() { return step(); },
+                                                   objective_function,
+                                                   vertices.begin()->second,
+                                                   vertices.begin()->first) {
+    simplex.vertices = vertices;
+    assert(vertices.size() == p + 1);
   }
 
  private:
@@ -100,22 +129,23 @@ class SimplexDownhill : public Optimizer<p, false, HESSIAN::NO, T, debug> {
     const auto& worst_vertex = simplex.getWorstVertex();
     const HyperLine<p, T> move_along_line{worst_vertex, mirror_point};
 
-    const auto move_along_line_with_constraints =
-        [&worst_vertex, &move_along_line, this](T value) {
-          Objective point = move_along_line.getPoint(value);
-          const auto direction = point - worst_vertex;
-          this->isObjectiveWithinConstrains(point, direction);
-          return point;
-        };
-
     // REFLECT
-    const auto reflection = move_along_line_with_constraints(REFELEXION_VALUE);
+    auto reflection = move_along_line.getPoint(REFELEXION_VALUE);
+    const auto direction = reflection - worst_vertex;
+    const auto c = this->isObjectiveWithinConstrains(reflection, direction);
+    if (c) {
+      if ((mirror_point - reflection).norm() < RANK_LOSS) {
+        // TODO do search on dimensiond down (pointer of simplexDownhillOptimizer
+        return rankLoss(c);
+      }
+    }
     const T reflection_score = this->J(reflection);
 
-    if (reflection_score < this->getCurrentScore()) {
+    if (reflection_score < this->getCurrentScore() && c == nullptr) {
       this->debugCurrentStep(reflection, reflection_score);
       // TRY EXPAND
-      const auto expanded = move_along_line_with_constraints(EXPANSION_VALUE);
+      auto expanded = move_along_line.getPoint(EXPANSION_VALUE);
+      this->isObjectiveWithinConstrains(expanded, direction);
       const T expanded_score = this->J(expanded);
       if (expanded_score < reflection_score) {
         // USE EXPANSION
@@ -133,8 +163,8 @@ class SimplexDownhill : public Optimizer<p, false, HESSIAN::NO, T, debug> {
     } else if (reflection_score < simplex.getWorstVertexScore()) {
       this->debugCurrentStep(reflection, reflection_score);
       // TRY OUTER CONTRACTION
-      const auto outer_contraction =
-          move_along_line_with_constraints(OUTER_CONTRACTION_VALUE);
+      auto outer_contraction = move_along_line.getPoint(OUTER_CONTRACTION_VALUE);
+      this->isObjectiveWithinConstrains(outer_contraction, direction);
       const T outer_contraction_score = this->J(outer_contraction);
 
       if (outer_contraction_score > reflection_score) {
@@ -184,7 +214,42 @@ class SimplexDownhill : public Optimizer<p, false, HESSIAN::NO, T, debug> {
     }
   }
 
-  void reset() {
+  bool rankLoss(std::shared_ptr<Constraint<p, true, T>> constraint) {
+    if constexpr (p == 1) {
+      return false;  // in 1 d we found the optimum.
+    } else {
+      Objective init_step_size = simplex.getExpansion();
+      reset(init_step_size);
+      const auto test = simplex.getExpansion();
+      for (unsigned i = 0; i < p; ++i) {
+        if (test(i, 0) < RANK_LOSS) {
+          if (p <= 1) {
+            return false;
+          }
+          const auto& hp = constraint->getHyperPlane();
+
+          using Objective_ = ObjectiveType<p - 1, T>;
+          const ObjectiveFunctionType<p - 1> J_ = [this, &hp](const Objective_& o) {
+            return this->J((*hp)(o));
+          };
+
+          std::multimap<T, Objective_> vertices_;
+          auto it = simplex.vertices.begin();
+          const auto end = --simplex.vertices.end();
+          while (it != end) {
+            vertices_.emplace(it->first, hp->inv(it->second));
+          }
+
+          auto optimizer = std::make_shared<SimplexDownhill<p - 1, T, debug>>(J_, vertices_);
+
+          return this->searchOnConstraint(constraint, optimizer);
+        }
+      }
+      return true;
+    }
+  }
+
+  void reset(const Objective& initial_step_size) {
     const auto& best_guess = this->getCurrentOptimum();
     simplex.vertices.clear();
     simplex.vertices.emplace(this->getCurrentScore(), best_guess);
@@ -201,7 +266,8 @@ class SimplexDownhill : public Optimizer<p, false, HESSIAN::NO, T, debug> {
       direction(i, 0) = initial_step_size(i, 0);
       vertex(i, 0) = best_guess(i, 0) + initial_step_size(i, 0);
 
-      if (!this->isObjectiveWithinConstrains(vertex, direction)) {
+      const auto c = this->isObjectiveWithinConstrains(vertex, direction);
+      if (c) {
         const auto corrected_vertex = vertex;
         direction(i, 0) = -initial_step_size(i, 0);
         vertex(i, 0) = best_guess(i, 0) - initial_step_size(i, 0);
@@ -225,7 +291,6 @@ class SimplexDownhill : public Optimizer<p, false, HESSIAN::NO, T, debug> {
   }
 
   Simplex<p, T> simplex;
-  const Objective initial_step_size;
 
   // |  = intersectionWithHyperPlane
   // WP = worstPoint

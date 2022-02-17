@@ -14,7 +14,6 @@ namespace opt {
 
 template <unsigned p, class T = double>
 struct DebugInfo {
-  EIGEN_MAKE_ALIGNED_OPERATOR_NEW
   using Objective = ObjectiveType<p, T>;
   Objective objective;
   T score;
@@ -62,6 +61,8 @@ enum HESSIAN { AVAIABLE_QUADRATIC, AVAIABLE, APPROXIMATE, NO };
 
 template <unsigned p, bool has_derivative, HESSIAN hessian, typename T = double, bool debug = false>
 class Optimizer {
+  friend Optimizer<p + 1, has_derivative, hessian, T, debug>;
+
  public:
   using Objective = ObjectiveType<p, T>;
   using ObjectiveFunction = ObjectiveFunctionType<p, T>;
@@ -95,6 +96,14 @@ class Optimizer {
     }
     c->init(&current_score, &current_objective);
     stopping_conditions.push_back(c);
+  }
+
+  void setConstraint(std::shared_ptr<Constraint<p, true, T>> c) {
+    linear_constraints.push_back(c);
+  }
+
+  void setConstraint(std::shared_ptr<Constraint<p, false, T>> c) {
+    nonlinear_constraints.push_back(c);
   }
 
 
@@ -153,6 +162,15 @@ class Optimizer {
 
   Optimizer(const std::function<bool()> &step_function,
             const ObjectiveFunction &objective_function,
+            const Objective &initial_guess,
+            const T initial_guess_score)
+      : objective_function(objective_function),
+        step(step_function),
+        current_objective(initial_guess),
+        current_score(initial_guess_score){};
+
+  Optimizer(const std::function<bool()> &step_function,
+            const ObjectiveFunction &objective_function,
             const ObjectiveFunctionDerivative &objective_function_derivative,
             const Objective &initial_guess)
       : objective_function(objective_function),
@@ -168,12 +186,12 @@ class Optimizer {
   }
 
   template <class Q = EnableType<hessian == AVAIABLE_QUADRATIC>>
-  typename std::enable_if<std::is_same<Q, TrueType>::value, bool>::type isObjectiveWithinConstrains(
-      Objective &o) {
+  typename std::enable_if<std::is_same<Q, TrueType>::value, std::shared_ptr<Constraint<p, true, T>>>::type
+  isObjectiveWithinConstrains(Objective &o) {
     assert(false && "NOT IMPLEMENTED YET");
 
     // active set method
-    return false;
+    return nullptr;
   }
 
   /*!
@@ -185,23 +203,21 @@ class Optimizer {
    * \return False if the objective had to be corrected and was altered. True otherwise.
    */
   template <class Q = EnableType<hessian == AVAIABLE_QUADRATIC>>
-  typename std::enable_if<std::is_same<Q, FalseType>::value, bool>::type isObjectiveWithinConstrains(
-      Objective &o, const Objective &gradient) {
+  typename std::enable_if<std::is_same<Q, FalseType>::value, std::shared_ptr<Constraint<p, true, T>>>::type
+  isObjectiveWithinConstrains(Objective &o, const Objective &gradient) {
+    std::shared_ptr<Constraint<p, true, T>> violated_constraint = nullptr;
     if (linear_constraints.empty()) {
-      return true;
+      return violated_constraint;
     }
-    // all linear constraints must be checked
-    // the nonlinear (if any are inside the objective function)
-    bool corrected = false;
-    const auto given_gradient = gradient;
+
     for (const auto &c : linear_constraints) {
       if (!c->isRespected(o)) {
-        if (c->getIntersection(o, given_gradient, o)) {
-          corrected = true;
+        if (c->getIntersection(o, gradient, o)) {
+          violated_constraint = c;
         }
       }
     }
-    return !corrected;
+    return violated_constraint;
   }
 
   template <class Q = EnableType<has_derivative>>
@@ -243,6 +259,35 @@ class Optimizer {
     // todo constraints
   }
 
+ protected:
+  bool searchOnConstraint(std::shared_ptr<Constraint<p, true, T>> c,
+                          std::shared_ptr<Optimizer<p - 1, has_derivative, hessian, T, debug>> optimizer) {
+    const auto hp = c->getHyperPlane();
+    optimizer->time_start = time_start;
+    // Todo add (active) linear constraints to optimizer.
+
+    const auto step_ = [this, &optimizer, &hp]() {
+      const bool res = optimizer->step();
+
+      if constexpr (debug) {
+        for (const auto &info : optimizer->debug_info) {
+          debug_info.push_back({(*hp)(info.objective), info.score, info.time});
+        }
+        optimizer->debug_info.clear();
+      }
+
+      return res;
+    };
+
+    // start optimization
+    do {
+      updateStoppingConditions();
+    } while (!stop() && step_());
+    // todo how to leave constraint? We never know if we found optimum on constraint...
+
+    return false;
+  }
+
  private:
   bool stop() {
     for (const auto &c : stopping_conditions) {
@@ -278,7 +323,6 @@ class Optimizer {
 
   std::vector<std::shared_ptr<Constraint<p, true, T>>> linear_constraints;
   std::vector<std::shared_ptr<Constraint<p, false, T>>> nonlinear_constraints;
-
   const std::function<bool()> step;
 
   const ObjectiveFunction objective_function;
@@ -307,7 +351,9 @@ class Optimizer {
 
   template <class Q = EnableType<debug>>
   typename std::enable_if<std::is_same<Q, FalseType>::value, void>::type debugCurrentStep(
-      const Objective &o, const T score) noexcept {}
+      const Objective &o, const T score) noexcept {
+    // nop
+  }
 
  private:
   std::vector<DebugInfo<p, T>> debug_info;

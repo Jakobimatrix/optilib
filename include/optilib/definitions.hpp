@@ -6,7 +6,7 @@
 namespace opt {
 // Objective O in R^p
 template <unsigned p, typename T = double>
-using ObjectiveType = Eigen::Matrix<T, p, 1>;
+using ObjectiveType = Eigen::Matrix<T, p, 1u>;
 // in R^dim
 
 // Objective Function J(x_1,x_2,..,x_{p}) in R^p -> R

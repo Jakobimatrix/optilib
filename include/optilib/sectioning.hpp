@@ -69,7 +69,8 @@ class Sectioning : public Optimizer<p, false, HESSIAN::NO, T, debug> {
   bool step() noexcept {
     const auto step = getNextStep();
     Objective next_objective = this->getCurrentOptimum() + step;
-    const bool force_direction_change = checkConstraintsAdjustDirection(next_objective);
+    const bool force_direction_change =
+        this->isObjectiveWithinConstrains(next_objective, next_step_base) != nullptr;
 
     const T next_score = this->J(next_objective);
     if (this->getCurrentScore() <= next_score) {
@@ -120,17 +121,6 @@ class Sectioning : public Optimizer<p, false, HESSIAN::NO, T, debug> {
     }
     next_step_base(direction_index) = direction * stepsize(direction_index, 0);
     return true;
-  }
-
-  /*!
-   * \brief Checks if a given objective is outside all linear constraints. If it is outside
-   * the given objective will be set to the intersection between the constraint and the
-   * line 'last valide objective - given objective'
-   * \param o Given Objective to correct if necessarry.
-   * \return true if the objective had to be corrected and was altered. False otherwise.
-   */
-  bool checkConstraintsAdjustDirection(Objective &o) {
-    return !this->isObjectiveWithinConstrains(o, next_step_base);
   }
 
   /*!

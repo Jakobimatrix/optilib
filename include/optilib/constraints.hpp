@@ -1,7 +1,10 @@
 #ifndef OPTIMIZATION_CONSTRAINTS
 #define OPTIMIZATION_CONSTRAINTS
 
+#include <memory>
+
 #include "definitions.hpp"
+#include "eigen_utils.hpp"
 #include "math.hpp"
 
 namespace opt {
@@ -35,8 +38,11 @@ struct ConstraintVariableHolder {};
 
 template <unsigned p, typename T, class Q>
 struct ConstraintVariableHolder<p, T, Q, std::enable_if_t<std::is_same<Q, TrueType>::value>> {
-  const T b;
+
+  ConstraintVariableHolder() {}
+  ConstraintVariableHolder(const Eigen::Matrix<T, 1, p> &a, T b) : a(a), b(b) {}
   const Eigen::Matrix<T, 1, p> a;
+  const T b;
 };
 
 template <unsigned p, typename T, class Q>
@@ -66,6 +72,7 @@ class Constraint : public ConstraintVariableHolder<p, T, EnableType<is_linear>> 
   static constexpr bool IS_LINEAR = is_linear;
 
   using Objective = ObjectiveType<p, T>;
+  using A = Eigen::Matrix<T, 1, p>;
 
   Constraint(const Constraint &other) = default;
   Constraint(Constraint &&other) = default;
@@ -78,8 +85,8 @@ class Constraint : public ConstraintVariableHolder<p, T, EnableType<is_linear>> 
    * \param b The displacement of the linear constraint
    */
 
-  Constraint(const Eigen::Matrix<T, 1, p> &a, const T b)
-      : ConstraintVariableHolder<p, T, TrueType>({a, b}) {}
+  Constraint(const A &a, const T b)
+      : ConstraintVariableHolder<p, T, TrueType>(a, b) {}
 
   /*!
    * \brief Define a nonlinear constraint
@@ -87,7 +94,7 @@ class Constraint : public ConstraintVariableHolder<p, T, EnableType<is_linear>> 
    * not violate constraint, a positive value otherwize.
    */
   Constraint(const CommonConstraint<p, T> &constraint_f, const T penalty_factor)
-      : ConstraintVariableHolder<p, T, FalseType>({penalty_factor}),
+      : ConstraintVariableHolder<p, T, FalseType>(penalty_factor),
         constraint_f(constraint_f) {}
 
   T operator()(const Objective &o) const { return constraint_f(o); }
@@ -98,7 +105,11 @@ class Constraint : public ConstraintVariableHolder<p, T, EnableType<is_linear>> 
    * \return True if the given objective is inside the constraint.
    */
   bool isRespected(const Objective &o) const {
-    return constraint_f(o) >= static_cast<T>(0.);
+    const auto value = constraint_f(o);
+    if (value > 0) {
+      return false;
+    }
+    return value <= static_cast<T>(0.);
   }
 
   /*!
@@ -144,11 +155,25 @@ class Constraint : public ConstraintVariableHolder<p, T, EnableType<is_linear>> 
   }
 
 
+  const std::shared_ptr<HyperPlane<p, T>> getHyperPlane() noexcept {
+    if (hyper_plane == nullptr) {
+      calculateHyperplaneParameters();
+    }
+    return hyper_plane;
+  }
+
+
  private:
+  void calculateHyperplaneParameters() {
+    hyper_plane = std::make_shared<HyperPlane<p, T>>(this->a, this->b);
+  }
+
   // This is always avaiable
   const CommonConstraint<p, T> constraint_f = [this](const Objective &o) {
-    return this->a * o - this->b, static_cast<T>(0.);
+    return -this->a * o + this->b;
   };
+
+  std::shared_ptr<HyperPlane<p, T>> hyper_plane;
 };
 
 }  // namespace opt
