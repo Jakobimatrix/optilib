@@ -29,14 +29,28 @@ inline Eigen::Matrix<double, n, m> pInv(const Eigen::Matrix<T, m, n>& A) {
   return v * s_inv * u.transpose();
 }
 
+/*!
+ * \brief Computes the nullspace of Matrix A' (given A)
+ * clang-format off
+    |----v1^T----|
+A = |     ...    | in R^(n,m)
+    |---vn-1^T---|
+
+ - Expext A' to have rank n!
+ - Expect m > n!
+ ->Than the Nullspace (of A') which is orthogonal to all v1 is N in R^(m, m-n)
+clang-format on
+ *
+ * \return Nullspace N in R^(m, m-n)
+ */
 template <int m, int n, class T>
-inline Eigen::Matrix<T, m, m - n> getNullspace(Eigen::Matrix<T, m, n>& A) {
+inline Eigen::Matrix<T, m, m - n> getNullspace(Eigen::Matrix<T, n, m>& A) {
   static_assert(m > n,
                 "The given Matrix must have more rows (m) than collumns (n)");
   constexpr int nullspace_dim = m - n;
   // https://stackoverflow.com/questions/34662940/how-to-compute-basis-of-nullspace-with-eigen-library
   // todo see if four fundamental subspaces and URV decomposition is faster.
-  Eigen::FullPivLU<Eigen::Matrix<T, n, m>> lu(A.transpose());
+  Eigen::FullPivLU<Eigen::Matrix<T, n, m>> lu(A);
 
   return lu.kernel();
 }
@@ -125,19 +139,21 @@ struct HyperPlane {
   HyperPlane(HyperPlane&&) = default;
   // operator=(HyperPlane&&) = default;
 
-  template <template <class, class> class TContainer, bool GIVEN_POINTS>
-  HyperPlane(const TContainer<Point*, std::allocator<Point*>>& container) {
-    assert(container.size() == dim &&
+  HyperPlane(std::array<Point, dim>& points) {
+    for (size_t i = 0; i < END_V; ++i) {
+      hyper_plane_parameters[i] = points[i] - points[INDEX_Vn];
+    }
+    hyper_plane_parameters[INDEX_Vn] = points[INDEX_Vn];
+  }
+
+  HyperPlane(std::vector<Point>& points) {
+    assert(points.size() == dim &&
            "Given STL container does not contain the number (p) of expected "
            "points.");
-    if constexpr (GIVEN_POINTS) {
-      for (size_t i = 0; i < END_V; ++i) {
-        hyper_plane_parameters[i] = container[i] - container[INDEX_Vn];
-      }
-      hyper_plane_parameters[INDEX_Vn] = container[INDEX_Vn];
-    } else {
-      std::copy(container.begin(), container.end(), hyper_plane_parameters);
+    for (size_t i = 0; i < END_V; ++i) {
+      hyper_plane_parameters[i] = points[i] - points[INDEX_Vn];
     }
+    hyper_plane_parameters[INDEX_Vn] = points[INDEX_Vn];
   }
 
   /*!
@@ -262,7 +278,7 @@ struct HyperPlane {
   Point operator()(const HyperSpacePoint& t) const noexcept {
     Point ret = hyper_plane_parameters[INDEX_Vn];
     for (size_t i = 0; i < END_V; ++i) {
-      ret += hyper_plane_parameters[i] * t(0, i);
+      ret += hyper_plane_parameters[i] * t(i, 0);
     }
     return ret;
   }
@@ -273,20 +289,20 @@ struct HyperPlane {
     // clang-format off
     /*
     given n-1 parameter vectors in R^n (as v1,v2...)
-        |----v1^T----|
-    V = |     ...    | in R^(n-1,n)
-        |---vn-1^T---|
+         |----v1^T----|
+    V' = |     ...    | in R^(n-1,n)
+         |---vn-1^T---|
 
-            |1 0 ... 0  x1 |
-    -> V′ = |0 1 ... 0  x2 |
-            |    ...       |
-            |0 0 ... 1 xn-1|
+           |1 0 ... 0  x1 |
+    -> V = |0 1 ... 0  x2 |
+           |    ...       |
+           |0 0 ... 1 xn-1|
 
     Normal to all vi is: [x1, x2, ..., xn-1, 1]^T
     This is also the nullspace of V
     */
     // clang-format on
-    auto V = XtoT::Zero();
+    XtoT V = XtoT::Zero();
     for (unsigned i = 0; i < END_V; ++i) {
       V.row(i) = hyper_plane_parameters[i];
     }
@@ -295,7 +311,8 @@ struct HyperPlane {
     // A[x-p] = 0 // p is any point on the plane, we simply use hyper_plane_parameters[INDEX_Vn]
     // Normal form to Koordinate form:
     // Ax - Ap = 0 >> Na == b and N == A
-    b = A.transposed() * hyper_plane_parameters[INDEX_Vn];
+
+    b = A * hyper_plane_parameters[INDEX_Vn];
   }
 
   HyperSpacePoint inv(const Point& p) {

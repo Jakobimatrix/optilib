@@ -19,12 +19,17 @@ if( Boost_FOUND )
   add_executable(test_opti_lib_sectioning test_sectioning.cpp)
   add_executable(test_opti_lib_gradient_sectioning test_gradient_sectioning.cpp)
   add_executable(test_opti_lib_simplex_downhill test_simplex_downhill.cpp)
+  add_executable(test_opti_lib_hyper_plane test_hyperplane.cpp)
 
   list(APPEND TARGET_LIBS
       PRIVATE opti_lib
       PRIVATE ${Boost_FILESYSTEM_LIBRARY}
       PRIVATE ${Boost_SYSTEM_LIBRARY}
       PRIVATE ${Boost_UNIT_TEST_FRAMEWORK_LIBRARY})
+
+  target_link_libraries(test_opti_lib_hyper_plane
+                        ${TARGET_LIBS}
+                        )
 
   target_link_libraries(test_opti_lib_stopping
                         ${TARGET_LIBS}
@@ -40,6 +45,7 @@ if( Boost_FOUND )
                         )
 
   # declares a test with executable
+  add_test(NAME test_hyperplane COMMAND test_opti_lib_hyper_plane)
   add_test(NAME test_stopping_conditions COMMAND test_opti_lib_stopping)
   add_test(NAME test_sectioning COMMAND test_opti_lib_sectioning)
   add_test(NAME test_gradient_sectioning COMMAND test_opti_lib_gradient_sectioning)
