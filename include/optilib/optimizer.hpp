@@ -200,7 +200,7 @@ class Optimizer {
    * vector 'from the given objective in direction of griven gradient'
    * \param o Given Objective to correct if necessarry.
    * \param gradient The direction in which to correct the objective if necessarry.
-   * \return False if the objective had to be corrected and was altered. True otherwise.
+   * \return The violated constraint or a nullpointer if no constraint is violated.
    */
   template <class Q = EnableType<hessian == AVAIABLE_QUADRATIC>>
   typename std::enable_if<std::is_same<Q, FalseType>::value, std::shared_ptr<Constraint<p, true, T>>>::type
