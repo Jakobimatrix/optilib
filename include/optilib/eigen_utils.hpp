@@ -131,7 +131,7 @@ struct HyperPlane {
   // for given X -> what is t?
   using XtoT = Eigen::Matrix<T, dim - 1, dim>;
   using TtoX = Eigen::Matrix<T, dim, dim - 1>;
-  std::shared_ptr<XtoT> inv_matrix = nullptr;
+  std::shared_ptr<Eigen::ColPivHouseholderQR<TtoX>> x_to_t = nullptr;
 
   HyperPlane() = default;
   HyperPlane(const HyperPlane&) = default;
@@ -155,67 +155,6 @@ struct HyperPlane {
     }
     hyper_plane_parameters[INDEX_Vn] = points[INDEX_Vn];
   }
-
-  /*!
-   * \brief Construct the Plane equation from the Form A*X = b
-   * \param A Vector of size [n+1 x 1]
-   * \param b constant
-   */
-  /*
-  HyperPlane(const Eigen::Matrix<T, 1, dim>& A, T b) {
-    Point x_rotated;
-    for (unsigned i = 0; i < dim; ++i) {
-      x_rotated(i, 0) = static_cast<T>(dim - i);
-    }
-
-    const auto rotate = [&x_rotated](unsigned pos) {
-      x_rotated.array() = x_rotated.array() + 1;
-      x_rotated(pos, 0) = 1;
-    };
-
-    unsigned current_pos = 0;
-    const T max_a = A.matrix().cwiseAbs().maxCoeff();
-    const T epsilon = getEpsilon(max_a);
-
-    int variable_use_count = 0;
-    unsigned x_i = 0;
-    size_t index = 0;
-
-
-    for (unsigned i = 0; i < dim; ++i) {
-      ++variable_use_count;
-      bool zero_round = isNearlyZero(A(0, i), epsilon);
-
-      // In case of leading zeros in A
-      while (zero_round && x_i == 0u) {
-        ++i;
-        ++variable_use_count;
-        zero_round = isNearlyZero(A(0, i), epsilon);
-      }
-
-      if (!zero_round) {
-        x_i = i;
-      }
-
-      while (variable_use_count > 0) {
-        rotate(i);  // Make sure to have vectors with different bases.
-
-        // [a*x](u != i) + a_i*x_i = b
-        const T known_left_side = A * x_rotated - A(0, x_i) * x_rotated(x_i, 0);
-        const T x_i_value = (b - known_left_side) / A(0, x_i);
-
-        hyper_plane_parameters[index] = x_rotated;
-        hyper_plane_parameters[index](0, x_i) = x_i_value;
-        index++;
-      }
-      assert(index == dim && "Something went wrong.");
-      const auto pn = hyper_plane_parameters[INDEX_Vn];
-      for (size_t i = 0; i < END_V; ++i) {
-        hyper_plane_parameters[i] -= pn;
-      }
-      hyper_plane_parameters[INDEX_Vn] = pn;
-    }
-    */
 
   HyperPlane(const Eigen::Matrix<T, 1, dim>& A, const T b) {
     // clang-format off
@@ -275,14 +214,11 @@ struct HyperPlane {
     hyper_plane_parameters[INDEX_Vn](index_i, 0) = b;
   }
 
-  Point operator()(const HyperSpacePoint& t) const noexcept {
-    Point ret = hyper_plane_parameters[INDEX_Vn];
-    for (size_t i = 0; i < END_V; ++i) {
-      ret += hyper_plane_parameters[i] * t(i, 0);
-    }
-    return ret;
-  }
-
+  /*!
+   * \brief Construct the Plane equation from the Form A*X = b
+   * \param A Vector of size [n+1 x 1]
+   * \param b constant
+   */
   void getKoordinateForm(Eigen::Matrix<T, 1, dim>& A, T& b) const {
     // Parameter form to Normal form:
     // https://www.mathwizurd.com/linalg/2018/11/15/find-a-normal-vector-to-a-hyperplane
@@ -315,20 +251,26 @@ struct HyperPlane {
     b = A * hyper_plane_parameters[INDEX_Vn];
   }
 
-  HyperSpacePoint inv(const Point& p) {
-    return getInvMatrix() * (p - hyper_plane_parameters[INDEX_Vn]);
+  Point operator()(const HyperSpacePoint& t) const noexcept {
+    Point ret = hyper_plane_parameters[INDEX_Vn];
+    for (size_t i = 0; i < END_V; ++i) {
+      ret += hyper_plane_parameters[i] * t(i, 0);
+    }
+    return ret;
   }
 
-  const XtoT& getInvMatrix() {
-    if (inv_matrix == nullptr) {
-      inv_matrix = std::make_shared<XtoT>();
-      TtoX V = TtoX::Zero();
+  HyperSpacePoint inv(const Point& p) {
+    if (x_to_t == nullptr) {
+      TtoX V;
       for (unsigned i = 0; i < END_V; ++i) {
         V.col(i) = hyper_plane_parameters[i];
       }
-      *inv_matrix = pInv<dim, dim - 1, T>(V);
+      x_to_t = std::make_shared<Eigen::ColPivHouseholderQR<TtoX>>(V);
+      assert(x_to_t->rank() == dim - 1 && "Bad rank");
     }
-    return *inv_matrix;
+
+    const auto b = p - hyper_plane_parameters[INDEX_Vn];
+    return x_to_t->solve(b);
   }
 
   /*!

@@ -106,6 +106,18 @@ class SimplexDownhill : public Optimizer<p, false, HESSIAN::NO, T, debug> {
   /*!
    * \brief SimplexDownhill Optimization.
    * \param objective_function The objective function to be minimized.
+   * \param initial_guess The best guess of the location of the minima of the objective function.
+   */
+  SimplexDownhill(const ObjectiveFunction& objective_function, const Objective& initial_guess)
+      : Optimizer<p, false, HESSIAN::NO, T, debug>(
+            [this]() { return step(); }, objective_function, initial_guess) {
+    const Objective initial_step_size = Objective::Ones();
+    reset(initial_step_size);
+  }
+
+  /*!
+   * \brief SimplexDownhill Optimization.
+   * \param objective_function The objective function to be minimized.
    * \param initial_guesses
    */
   SimplexDownhill(const ObjectiveFunction& objective_function,
@@ -225,6 +237,7 @@ class SimplexDownhill : public Optimizer<p, false, HESSIAN::NO, T, debug> {
         return this->J((*hp)(o));
       };
 
+      /*
       std::multimap<T, Objective_> vertices_;
       auto it = simplex.vertices.begin();
       const auto end = --simplex.vertices.end();
@@ -234,7 +247,9 @@ class SimplexDownhill : public Optimizer<p, false, HESSIAN::NO, T, debug> {
       }
 
       auto optimizer = std::make_shared<SimplexDownhill<p - 1, T, debug>>(J_, vertices_);
-
+      */
+      const auto initial_guess = hp->inv(simplex.getBestVertex());
+      auto optimizer = std::make_shared<SimplexDownhill<p - 1, T, debug>>(J_, initial_guess);
       return this->searchOnConstraint(constraint, optimizer);
     }
   }
