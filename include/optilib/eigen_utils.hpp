@@ -116,6 +116,7 @@ struct HyperLine {
   }
 };
 
+// Struct to store a hyper plane in parameter form.
 template <unsigned dim, class T>
 struct HyperPlane {
   static constexpr unsigned END_V = dim - 1;
@@ -126,7 +127,7 @@ struct HyperPlane {
   // X = (P0 - Pn)*t0 + (P1 - Pn)*t1 + ... + (Pn-1 - Pn)*tn-1 + Pn
 
   // X = Pn + V0*t0 + V1*t1 + ... + Vn-1*tn-1
-  std::array<Point, dim> hyper_plane_parameters;
+  std::array<Point, dim> hyper_plane_parameters;  // Last index/point is constant offset of parameter form
 
   // for given X -> what is t?
   using XtoT = Eigen::Matrix<T, dim - 1, dim>;
@@ -139,6 +140,10 @@ struct HyperPlane {
   HyperPlane(HyperPlane&&) = default;
   // operator=(HyperPlane&&) = default;
 
+  /*!
+   * \brief Constructor for the nD-Hyperplane given n Points inside the plane.
+   * \param points N points inside the Hyperplane.
+   */
   HyperPlane(std::array<Point, dim>& points) {
     for (size_t i = 0; i < END_V; ++i) {
       hyper_plane_parameters[i] = points[i] - points[INDEX_Vn];
@@ -146,6 +151,10 @@ struct HyperPlane {
     hyper_plane_parameters[INDEX_Vn] = points[INDEX_Vn];
   }
 
+  /*!
+   * \brief Constructor for the nD-Hyperplane given n Points inside the plane.
+   * \param points N points inside the Hyperplane.
+   */
   HyperPlane(std::vector<Point>& points) {
     assert(points.size() == dim &&
            "Given STL container does not contain the number (p) of expected "
@@ -156,6 +165,12 @@ struct HyperPlane {
     hyper_plane_parameters[INDEX_Vn] = points[INDEX_Vn];
   }
 
+  /*!
+   * \brief Constructor for the Hyperplane given in Koordinate form. Calculates
+   * the normalized Parameter form (which is the form used for storage)
+   * \param A The matrix of the given Koordinate form Ax+b=0.
+   * \param b The vector of the given Koordinate form Ax+b=0.
+   */
   HyperPlane(const Eigen::Matrix<T, 1, dim>& A, const T b) {
     // clang-format off
     /* 1. Koordinate form -> Parameter form
@@ -191,7 +206,7 @@ struct HyperPlane {
     unsigned index_i = 0;
     bool found_nonzero = false;
     for (; index_i < dim; ++index_i) {
-      if (!isNearlyZero(A(0, index_i), epsilon)) {
+      if (!isNearlyZero2(A(0, index_i), epsilon)) {
         found_nonzero = true;
         break;
       }
@@ -199,23 +214,30 @@ struct HyperPlane {
 
     assert(found_nonzero && "HyperPlane:: Given A matrix is zero!");
 
+    // Construct the normalized vectors which span the hyperplane.
     for (size_t i = 0; i < index_i; ++i) {
+      const T hp_index_i = -A(0, i) / A(0, index_i);
+      const T dimension_index_i_length = std::sqrt(1 + hp_index_i * hp_index_i);
+
       hyper_plane_parameters[i] = Point::Zero();
-      hyper_plane_parameters[i](i, 0) = 1;
-      hyper_plane_parameters[i](index_i, 0) = -A(0, i) / A(0, index_i);
+      hyper_plane_parameters[i](i, 0) = 1. / dimension_index_i_length;
+      hyper_plane_parameters[i](index_i, 0) = hp_index_i / dimension_index_i_length;
     }
 
     for (size_t i = index_i; i < END_V; ++i) {
+      const T hp_index_i = -A(0, i + 1) / A(0, index_i);
+      const T dimension_index_i_length = std::sqrt(1 + hp_index_i * hp_index_i);
+
       hyper_plane_parameters[i] = Point::Zero();
-      hyper_plane_parameters[i](i + 1, 0) = 1;
-      hyper_plane_parameters[i](index_i, 0) = -A(0, i) / A(0, index_i);
+      hyper_plane_parameters[i](i + 1, 0) = 1. / dimension_index_i_length;
+      hyper_plane_parameters[i](index_i, 0) = hp_index_i / dimension_index_i_length;
     }
     hyper_plane_parameters[INDEX_Vn] = Point::Zero();
     hyper_plane_parameters[INDEX_Vn](index_i, 0) = b;
   }
 
   /*!
-   * \brief Construct the Plane equation from the Form A*X = b
+   * \brief Construct the Plane equation from the Form Ax = b
    * \param A Vector of size [n+1 x 1]
    * \param b constant
    */
@@ -246,11 +268,17 @@ struct HyperPlane {
     A = getNullspace(V);
     // A[x-p] = 0 // p is any point on the plane, we simply use hyper_plane_parameters[INDEX_Vn]
     // Normal form to Koordinate form:
-    // Ax - Ap = 0 >> Na == b and N == A
+    // Ax - Ap = 0 >> Ap == b and N == A
 
     b = A * hyper_plane_parameters[INDEX_Vn];
   }
 
+
+  /*!
+   * \brief Given a parameter point on the hyperplane calculate the point in space.
+   * \param t Point in n-1-D Space (in parameterspace of hypherplane)
+   * \return Point in n-D Space (Point on hyperplane).
+   */
   Point operator()(const HyperSpacePoint& t) const noexcept {
     Point ret = hyper_plane_parameters[INDEX_Vn];
     for (size_t i = 0; i < END_V; ++i) {
@@ -259,6 +287,20 @@ struct HyperPlane {
     return ret;
   }
 
+  /*!
+   * \brief Normalizes the vectors spanning the hyperplane.
+   */
+  void normalize() noexcept {
+    for (size_t i = 0; i < END_V; ++i) {
+      hyper_plane_parameters[i].normalize();
+    }
+  }
+
+  /*!
+   * \brief Given a point in n-D Space on the hyperplane, calculate the corresponding point in the parameterspace of the hyperplane in n-1-D.
+   * \param p Point in n-D Space (Point on hyperplane).
+   * \return Point in n-1-D Space (in parameterspace of hypherplane).
+   */
   HyperSpacePoint inv(const Point& p) {
     if (x_to_t == nullptr) {
       TtoX V;

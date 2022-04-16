@@ -2,8 +2,11 @@
 #include <iostream>
 #include <optilib/gradient_sectioning.hpp>
 #include <optilib/sectioning.hpp>
+#include <optilib/simplex_downhill.hpp>
 
+/*
 int main() {
+
 
   constexpr size_t p = 2;
   using O = opt::ObjectiveType<p>;
@@ -79,4 +82,63 @@ int main() {
   std::cout << "\naverage grad: " << average_grad / i
             << "\naverage sec: " << average_sec / i << "\n";
   return 0;
+}
+*/
+
+int main() {
+
+  constexpr size_t p = 2;
+  using O = opt::ObjectiveType<p>;
+  using LinearConstraint = opt::Constraint<p, true>;
+
+  static const O MIN_PROGRESS{0.00001, 0.00001};
+  static const O EXPECTED_OPTIMUM{1.79916, 3.60042};
+
+  const opt::ObjectiveFunctionType<p> parabular = [](const O& o) {
+    return o(0, 0) * o(0, 0) + o(1, 0) * o(1, 0);
+  };
+
+
+  int ig = 75;
+  double sss = 10;
+
+  const O initial_guess{ig, ig};
+  const O starting_stepsize{sss, sss};
+
+  auto stopping_cond_1 =
+      std::make_shared<opt::StoppingConditionNStepsNoProgress<p>>(12u, MIN_PROGRESS);
+  auto stopping_cond_2 = std::make_shared<opt::StoppingConditionMaxSteps<p>>(210);
+
+  auto c1 = std::make_shared<LinearConstraint>(LinearConstraint::A(1, 2), 9.);
+
+  opt::SimplexDownhill<p, double, true> optimizer(parabular, initial_guess, starting_stepsize);
+  optimizer.setStoppingCondition(stopping_cond_1);
+  optimizer.setStoppingCondition(stopping_cond_2);
+  optimizer.setConstraint(c1);
+
+  optimizer.start();
+  const auto optimum = optimizer.getCurrentOptimum();
+
+
+  const auto& dbg_info = optimizer.getDebugInfo();
+  const std::string name =
+      "/tmp/" + std::to_string(ig) + "_" + std::to_string(sss) + ".csv";
+  std::ofstream stream(name.c_str(), std::ofstream::trunc);
+  opt::DebugInfo<p, double>::print(stream, ';', dbg_info);
+
+
+  const std::string name2 =
+      "/tmp/" + std::to_string(ig) + "_" + std::to_string(sss) + "2.csv";
+  std::ofstream stream2(name2.c_str(), std::ofstream::trunc);
+
+  const auto& simplxe = optimizer.simplexe;
+  const char SEPERATOR = ';';
+  for (const auto& pair : simplxe) {
+    const auto& vs = pair.second.vertices;
+    for (const auto& v : vs) {
+      stream2 << v.second(0, 0) << SEPERATOR << v.second(1, 0) << SEPERATOR
+              << v.first << SEPERATOR;
+    }
+    stream2 << pair.first << '\n';
+  }
 }

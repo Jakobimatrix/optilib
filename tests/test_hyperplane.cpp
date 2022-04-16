@@ -90,13 +90,15 @@ BOOST_AUTO_TEST_CASE(test_Hyperplane_form_conversation_n10, *utf::tolerance(0.00
 
     // Test t -> X and X -> t
     for (int sub_run = 0; sub_run < 1000; ++sub_run) {
-      const auto t = HyperPlaneNd::HyperSpacePoint::Random();
+      HyperPlaneNd::HyperSpacePoint t = HyperPlaneNd::HyperSpacePoint::Random().eval();
       const auto x = h(t);
       const auto t_ = h.inv(x);
       const auto x_ = h(t_);
       for (unsigned p = 0; p < N; ++p) {
-        // BOOST_TEST(t(p, 0) == t_(p, 0)); // not injective??
         BOOST_TEST(x(p, 0) == x_(p, 0));
+      }
+      for (unsigned p = 0; p < N - 1; ++p) {
+        BOOST_TEST(t(p, 0) == t_(p, 0));
       }
     }
 

@@ -15,19 +15,17 @@ inline bool isNearlyEqual(T a, T b) {
 }
 
 template <class T>
-inline bool isNearlyZero(T v) {
-  constexpr int factor = 7;
+inline bool isNearlyZero(T v, int factor) {
   constexpr T zero(static_cast<T>(0.));
 
-  /*constexpr*/ const T min =
-      -std::nextafter(zero, std::numeric_limits<T>::lowest()) * factor;
-  /*constexpr*/ const T max = std::nextafter(zero, std::numeric_limits<T>::max()) * factor;
+  const T min = -std::nextafter(zero, std::numeric_limits<T>::lowest()) * factor;
+  const T max = std::nextafter(zero, std::numeric_limits<T>::max()) * factor;
 
   return min <= v && max >= v;
 }
 
 template <class T>
-constexpr bool isNearlyZero(T value, T epsilon) {
+constexpr bool isNearlyZero2(T value, T epsilon) {
   return -epsilon <= value && value <= epsilon;
 }
 

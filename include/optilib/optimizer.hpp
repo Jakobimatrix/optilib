@@ -268,12 +268,12 @@ class Optimizer {
 
     const auto step_ = [this, &optimizer, &hp]() {
       const bool res = optimizer->step();
-
       if constexpr (debug) {
         for (const auto &info : optimizer->debug_info) {
           debug_info.push_back({(*hp)(info.objective), info.score, info.time});
         }
         optimizer->debug_info.clear();
+        // neues optimum zuwisen
       }
 
       return res;
@@ -285,6 +285,8 @@ class Optimizer {
     } while (!stop() && step_());
     // todo how to leave constraint? We never know if we found optimum on constraint...
 
+    this->current_objective = (*hp)(optimizer->current_objective);
+    this->current_score = optimizer->current_score;
     return false;
   }
 

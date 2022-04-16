@@ -87,7 +87,6 @@ class SimplexDownhill : public Optimizer<p, false, HESSIAN::NO, T, debug> {
  public:
   using Objective = ObjectiveType<p, T>;
   using ObjectiveFunction = ObjectiveFunctionType<p, T>;
-  static constexpr T RANK_LOSS = 0.000001;
 
   /*!
    * \brief SimplexDownhill Optimization.
@@ -146,8 +145,8 @@ class SimplexDownhill : public Optimizer<p, false, HESSIAN::NO, T, debug> {
     const auto direction = reflection - worst_vertex;
     const auto c = this->isObjectiveWithinConstrains(reflection, direction);
     if (c) {
-      if ((mirror_point - reflection).norm() < RANK_LOSS) {
-        // TODO do search on dimensiond down (pointer of simplexDownhillOptimizer
+      if ((mirror_point - reflection).norm() < 0.00001 ||
+          (reflection - worst_vertex).norm() < 0.00001) {
         return rankLoss(c);
       }
     }
@@ -163,20 +162,31 @@ class SimplexDownhill : public Optimizer<p, false, HESSIAN::NO, T, debug> {
         // USE EXPANSION
         this->setNewOptimum(expanded_score, expanded);
         simplex.putNewObjective(expanded, expanded_score);
+        debugSimplex("expansion");
       } else {
         // USE REFLECTION
         this->setNewOptimum(reflection_score, reflection);
         simplex.putNewObjective(reflection, reflection_score);
+        debugSimplex("reflection");
       }
     } else if (reflection_score < simplex.getSecondWorstVertexScore()) {
       // USE REFLECTION
       this->setNewOptimum(reflection_score, reflection);
       simplex.putNewObjective(reflection, reflection_score);
+      debugSimplex("reflection");
     } else if (reflection_score < simplex.getWorstVertexScore()) {
       this->debugCurrentStep(reflection, reflection_score);
       // TRY OUTER CONTRACTION
       auto outer_contraction = move_along_line.getPoint(OUTER_CONTRACTION_VALUE);
-      this->isObjectiveWithinConstrains(outer_contraction, direction);
+
+      if (c) {
+        if (!c->isRespected(outer_contraction)) {
+          // outer_contraction would be corrected to be equal to reflection
+          // and reflection has in this branch the worst score.
+          shrink();
+          return true;
+        }
+      }
       const T outer_contraction_score = this->J(outer_contraction);
 
       if (outer_contraction_score > reflection_score) {
@@ -187,6 +197,7 @@ class SimplexDownhill : public Optimizer<p, false, HESSIAN::NO, T, debug> {
       // USE OUTER_CONTRACTION
       this->setNewOptimum(outer_contraction_score, outer_contraction);
       simplex.putNewObjective(outer_contraction, outer_contraction_score);
+      debugSimplex("outer contraction");
 
     } else {
       this->debugCurrentStep(reflection, reflection_score);
@@ -201,6 +212,7 @@ class SimplexDownhill : public Optimizer<p, false, HESSIAN::NO, T, debug> {
       // USE INNER_CONTRACTION
       this->setNewOptimum(inner_contraction_score, inner_contraction);
       simplex.putNewObjective(inner_contraction, inner_contraction_score);
+      debugSimplex("inner contraction");
     }
 
     return true;
@@ -213,9 +225,11 @@ class SimplexDownhill : public Optimizer<p, false, HESSIAN::NO, T, debug> {
     std::multimap<T, Objective> new_verices;
     new_verices.emplace(simplex.getBestVertexScore(), simplex.getBestVertex());
 
+    T index = 0;
     for (auto it = ++simplex.vertices.begin(); it != simplex.vertices.end(); ++it) {
       L.p1 = it->second;
-      const auto shrinked = L.getPoint(SHRINKING_VALUE);
+      const auto shrinked = L.getPoint(shrinking_factor(index));
+      ++index;
       const auto score = this->J(shrinked);
       new_verices.emplace(score, shrinked);
       this->debugCurrentStep(shrinked, score);
@@ -224,6 +238,8 @@ class SimplexDownhill : public Optimizer<p, false, HESSIAN::NO, T, debug> {
     if (simplex.getBestVertexScore() < this->getCurrentScore()) {
       this->setNewOptimum(simplex.getBestVertexScore(), simplex.getBestVertex());
     }
+
+    debugSimplex("shrink");
   }
 
   bool rankLoss(std::shared_ptr<Constraint<p, true, T>> constraint) {
@@ -237,7 +253,7 @@ class SimplexDownhill : public Optimizer<p, false, HESSIAN::NO, T, debug> {
         return this->J((*hp)(o));
       };
 
-      /*
+
       std::multimap<T, Objective_> vertices_;
       auto it = simplex.vertices.begin();
       const auto end = --simplex.vertices.end();
@@ -247,9 +263,9 @@ class SimplexDownhill : public Optimizer<p, false, HESSIAN::NO, T, debug> {
       }
 
       auto optimizer = std::make_shared<SimplexDownhill<p - 1, T, debug>>(J_, vertices_);
-      */
-      const auto initial_guess = hp->inv(simplex.getBestVertex());
-      auto optimizer = std::make_shared<SimplexDownhill<p - 1, T, debug>>(J_, initial_guess);
+
+      // const auto initial_guess = hp->inv(simplex.getBestVertex());
+      // auto optimizer = std::make_shared<SimplexDownhill<p - 1, T, debug>>(J_, initial_guess);
       return this->searchOnConstraint(constraint, optimizer);
     }
   }
@@ -304,9 +320,29 @@ class SimplexDownhill : public Optimizer<p, false, HESSIAN::NO, T, debug> {
   static constexpr T EXPANSION_VALUE = 4.;           // ..*......|...WP
   static constexpr T OUTER_CONTRACTION_VALUE = 3.;   // .......*.|...WP
   static constexpr T INNER_CONTRACTION_VALUE = 0.5;  // .........|.*.WP
-  static constexpr T SHRINKING_VALUE = 0.5;
+  static constexpr T SHRINKING_VALUE_MIN = 0.25;
+  static constexpr T SHRINKING_VALUE_MAX = 0.75;
   // Move all vertices in direction of best point.
+  // Move the worst vertex SHRINKING_VALUE_MAX and the second_best
+  // SHRINKING_VALUE_MIN interpolate for the others
+  T shrinking_factor(T index) const noexcept {
+    if constexpr (p < 2) {
+      return (SHRINKING_VALUE_MAX - SHRINKING_VALUE_MIN) * 0.5;
+    } else {
+      constexpr T m =
+          (SHRINKING_VALUE_MAX - SHRINKING_VALUE_MIN) / (static_cast<T>(p - 1));
+      return m * index + SHRINKING_VALUE_MIN;
+    }
+  }
+
+ public:
+  std::vector<std::pair<std::string, Simplex<p, T>>> simplexe;
+  void debugSimplex(std::string s) {
+    simplexe.push_back(std::make_pair(s, simplex));
+  }
 };
+
+
 
 }  // namespace opt
 

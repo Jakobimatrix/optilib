@@ -131,7 +131,7 @@ class Constraint : public ConstraintVariableHolder<p, T, EnableType<is_linear>> 
      */
 
     const T aA = this->a * gradient;
-    if (isNearlyZero(aA)) {
+    if (isNearlyZero(aA, 7)) {
       return false;
     }
 
