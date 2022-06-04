@@ -36,12 +36,13 @@ if ("${CMAKE_CXX_COMPILER_ID}" STREQUAL "Clang")
 endif()
 
 
-
-
 option(TEST_OPTILIB "Build tests for ${PROJECT_NAME}" TRUE)
 if(TEST_OPTILIB)
   enable_testing()
   add_subdirectory(tests)
 endif()
 
-add_subdirectory(executable)
+option(BUILD_EXAMPLE "Build example for ${PROJECT_NAME}" TRUE)
+if(BUILD_EXAMPLE)
+  add_subdirectory(executable)
+endif()
