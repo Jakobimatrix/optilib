@@ -38,8 +38,8 @@ endif()
 
 
 
-option(TEST_SETTINGS "Build tests for ${PROJECT_NAME}" TRUE)
-if(TEST_SETTINGS)
+option(TEST_OPTILIB "Build tests for ${PROJECT_NAME}" TRUE)
+if(TEST_OPTILIB)
   enable_testing()
   add_subdirectory(tests)
 endif()
